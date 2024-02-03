@@ -1,33 +1,51 @@
 #ifndef OTK_HPP
 #define OTK_HPP
 
+#include <filesystem>
+#include <ostream>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
 #include <odb_API.h>
+
 #include <vtkCellArray.h>
 #include <vtkCellType.h>
 #include <vtkPoints.h>
 
-#include <filesystem>
-#include <ostream>
-#include <unordered_map>
-#include <vector>
+#include <nlohmann/json.hpp>
 
-namespace otk {
+namespace otk
+{
 
 std::filesystem::path find_file(std::filesystem::path current_path);
 
-class Odb {
- public:
-  Odb(std::filesystem::path path);
-  ~Odb();
+class Odb
+{
+  public:
+    Odb(std::filesystem::path path);
+    ~Odb();
 
-  void write_info();
-  void write_vtu();
+    void write_info();
+    void write_vtu();
 
-  friend std::ostream &operator<<(std::ostream &os, const Odb &odb);
+    friend std::ostream &operator<<(std::ostream &os, const Odb &odb);
 
- private:
-  std::filesystem::path path_;
-  odb_Odb *odb_;
+    std::string path() const;
+    std::string name() const;
+
+    nlohmann::json instances() const;
+    nlohmann::json nodes(const std::string &instance_name) const;
+    nlohmann::json elements(const std::string &instance_name) const;
+
+    nlohmann::json steps() const;
+    nlohmann::json frames(const std::string &step_name) const;
+    nlohmann::json fields(const std::string &step_name,
+                          const int frame_number) const;
+
+  private:
+    std::filesystem::path path_;
+    odb_Odb *odb_;
 };
 
 void get_points_from_nodes(vtkPoints *points,
@@ -93,6 +111,6 @@ const std::unordered_map<std::string, VTKCellType> abq2vtk_cell_map{
     {"CSS8", VTK_HEXAHEDRON},
 };
 
-}  // namespace otk
+} // namespace otk
 
-#endif  // !OTK_HPP
+#endif // !OTK_HPP
