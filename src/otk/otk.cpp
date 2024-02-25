@@ -115,12 +115,69 @@ Odb::~Odb()
 
 std::string Odb::path() const
 {
-    return path_.string();
+    return std::filesystem::absolute(path_.parent_path()).string();
 }
 
 std::string Odb::name() const
 {
     return path_.filename().string();
+}
+
+nlohmann::json Odb::info() const
+{
+    using namespace nlohmann;
+    json j;
+    j["path"] = path_.string();
+
+    odb_Assembly &root_assembly = odb_->rootAssembly();
+    odb_InstanceRepositoryIT instance_iterator(root_assembly.instances());
+    j["instances"]["number"] = root_assembly.instances().size();
+
+    for (instance_iterator.first(); !instance_iterator.isDone();
+         instance_iterator.next())
+    {
+        const odb_String &instance_name = instance_iterator.currentKey();
+        const odb_Instance &instance = instance_iterator.currentValue();
+        odb_Enum::odb_DimensionEnum instance_type = instance.embeddedSpace();
+
+        json j_instance;
+        j_instance["name"] = instance_name.CStr();
+        j_instance["type"] = instance_type;
+
+        const odb_SequenceNode &instance_nodes = instance.nodes();
+        const odb_SequenceElement &instance_elements = instance.elements();
+        int number_nodes = instance_nodes.size();
+        int number_elements = instance_elements.size();
+        j_instance["nodes"]["number"] = number_nodes;
+        j_instance["elements"]["number"] = number_elements;
+
+        for (int i = 0; i < number_elements; ++i)
+        {
+            json j_element;
+
+            const odb_Element &element = instance_elements[i];
+            std::string element_type = element.type().CStr();
+            int element_label = element.label();
+            int element_index = element.index();
+
+            int n = 0;
+            const int *const element_connectivity = element.connectivity(n);
+
+            j_element["type"] = element_type;
+            j_element["label"] = element_label;
+            j_element["index"] = element_index;
+            j_element["number_nodes"] = n;
+
+            for (int j = 0; j < n; ++j)
+            {
+                j_element["connectivity"].push_back(element_connectivity[j]);
+            }
+            j_instance["elements"]["data"].push_back(j_element);
+        }
+        j["instances"]["data"].push_back(j_instance);
+    }
+
+    return j;
 }
 
 nlohmann::json Odb::instances() const
@@ -281,79 +338,59 @@ nlohmann::json Odb::fields(const std::string &step_name,
 
 std::ostream &operator<<(std::ostream &os, const Odb &odb)
 {
+    using namespace nlohmann;
+    json j;
+    j["path"] = odb.path_.string();
+
     odb_Assembly &root_assembly = odb.odb_->rootAssembly();
     odb_InstanceRepositoryIT instance_iterator(root_assembly.instances());
+    j["instances"]["number"] = root_assembly.instances().size();
 
     for (instance_iterator.first(); !instance_iterator.isDone();
          instance_iterator.next())
     {
         const odb_String &instance_name = instance_iterator.currentKey();
-        os << instance_name.CStr() << "\n";
-
         const odb_Instance &instance = instance_iterator.currentValue();
         odb_Enum::odb_DimensionEnum instance_type = instance.embeddedSpace();
-        os << "Type: " << instance_type << "\n";
+
+        json j_instance;
+        j_instance["name"] = instance_name.CStr();
+        j_instance["type"] = instance_type;
 
         const odb_SequenceNode &instance_nodes = instance.nodes();
-        int num_nodes = instance_nodes.size();
-        os << "Number of nodes: " << num_nodes << "\n";
-
         const odb_SequenceElement &instance_elements = instance.elements();
-        int num_elements = instance_elements.size();
-        os << "Number of elements: " << num_elements << "\n";
-    }
+        int number_nodes = instance_nodes.size();
+        int number_elements = instance_elements.size();
+        j_instance["nodes"]["number"] = number_nodes;
+        j_instance["elements"]["number"] = number_elements;
 
-    odb_StepRepositoryIT step_iterator(odb.odb_->steps());
-    int num_steps = odb.odb_->steps().size();
-    os << "Number of steps: " << num_steps << "\n";
-    for (step_iterator.first(); !step_iterator.isDone(); step_iterator.next())
-    {
-        const odb_Step &step = step_iterator.currentValue();
-        os << "  - " << step.name().CStr();
-
-        const odb_SequenceFrame &frames = step.frames();
-        int num_frames = frames.size();
-        os << " (" << num_frames << " frames)\n";
-
-        std::unordered_map<std::string, size_t> field_map;
-        std::unordered_map<std::string, size_t> field_bulk_data_map;
-
-        for (int iframe = 0; iframe < num_frames; ++iframe)
+        for (int i = 0; i < number_elements; ++i)
         {
-            const odb_Frame &frame = frames[iframe];
-            odb_FieldOutputRepository field_outputs = frame.fieldOutputs();
-            odb_FieldOutputRepositoryIT field_output_iterator(field_outputs);
-            for (field_output_iterator.first(); !field_output_iterator.isDone();
-                 field_output_iterator.next())
+            json j_element;
+
+            const odb_Element &element = instance_elements[i];
+            std::string element_type = element.type().CStr();
+            int element_label = element.label();
+            int element_index = element.index();
+
+            int n = 0;
+            const int *const element_connectivity = element.connectivity(n);
+
+            j_element["type"] = element_type;
+            j_element["label"] = element_label;
+            j_element["index"] = element_index;
+            j_element["number_nodes"] = n;
+
+            for (int j = 0; j < n; ++j)
             {
-                const odb_FieldOutput &field_output =
-                    field_output_iterator.currentValue();
-                std::string field_output_name{
-                    field_output_iterator.currentKey().CStr()};
-                if (field_map.find(field_output_name) == field_map.end())
-                {
-                    field_map[field_output_name] = 1;
-                }
-                else
-                {
-                    field_map[field_output_name]++;
-                }
-                if (field_bulk_data_map.find(field_output_name) ==
-                    field_bulk_data_map.end())
-                {
-                    field_bulk_data_map[field_output_name] =
-                        field_output.bulkDataBlocks().size();
-                }
+                j_element["connectivity"].push_back(element_connectivity[j]);
             }
+            j_instance["elements"]["data"].push_back(j_element);
         }
-
-        for (auto &field_info : field_map)
-        {
-            os << "        " << field_info.first << " (" << field_info.second
-               << " frames x " << field_bulk_data_map[field_info.first]
-               << " blocks)\n";
-        }
+        j["instances"]["data"].push_back(j_instance);
     }
+
+    os << j.dump(2);
     return os;
 }
 

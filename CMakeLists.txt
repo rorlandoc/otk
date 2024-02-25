@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
+
+execute_process(
+      COMMAND git log -1 --format=%h
+      WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
+      OUTPUT_VARIABLE GIT_HASH
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
+string(TIMESTAMP BUILD_TIME "%Y%m%d" UTC)
+
 project(OTK
-    VERSION 0.1.0
+    VERSION 0.1.${BUILD_TIME}
     DESCRIPTION "Abaqus ODB Toolkit - ODB<->VTK file reader and writer"
     LANGUAGES CXX)
 
@@ -28,21 +36,33 @@ set(abq_odb_api_includes "${otk_abaqus_dir}/code/include" "${otk_abaqus_pardir}"
 
 include(FetchContent)
 
-set(DOWNLOAD_EXTRACT_TIMESTAM TRUE)
 FetchContent_Declare(json
-    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
+    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+    DOWNLOAD_EXTRACT_TIMESTAMP True)
+FetchContent_Declare(argparse
+    GIT_REPOSITORY "https://github.com/p-ranav/argparse")
+
 FetchContent_MakeAvailable(json)
+FetchContent_MakeAvailable(argparse)
 
 add_library(otk STATIC
     include/otk/otk.hpp
     src/otk/otk.cpp
 )
-target_link_libraries(otk PUBLIC ${VTK_LIBRARIES} ${abq_odb_api_libraries} nlohmann_json::nlohmann_json)
-target_include_directories(otk PUBLIC ${abq_odb_api_includes} include src)
+target_link_libraries(otk PUBLIC 
+  ${VTK_LIBRARIES} 
+  ${abq_odb_api_libraries} 
+  nlohmann_json::nlohmann_json
+  argparse)
+target_include_directories(otk PUBLIC 
+  ${abq_odb_api_includes} 
+  include 
+  src)
 
 add_executable(otk_cli src/otk_cli/otk_cli.cpp)
 target_link_libraries(otk_cli PRIVATE otk)
 target_include_directories(otk_cli PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_options(otk_cli PRIVATE "-DOTK_VERSION=${CMAKE_PROJECT_VERSION}_${GIT_HASH}")
 
 if(WIN32)
     target_compile_definitions(otk PUBLIC _WINDOWS_SOURCE)

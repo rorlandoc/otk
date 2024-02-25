@@ -1,6 +1,9 @@
 #ifndef OTK_HPP
 #define OTK_HPP
 
+#define STR(X) XSTR(X)
+#define XSTR(X) #X
+
 #include <filesystem>
 #include <ostream>
 #include <string>
@@ -33,6 +36,8 @@ class Odb
 
     std::string path() const;
     std::string name() const;
+
+    nlohmann::json info() const;
 
     nlohmann::json instances() const;
     nlohmann::json nodes(const std::string &instance_name) const;
