@@ -57,26 +57,27 @@ class Odb {
     // -----------------------------------------------------------------------------------
     inline std::string path() const { return fs::absolute(path_.parent_path()).string(); }
     inline std::string name() const { return path_.filename().string(); }
-    inline odb_Odb *handle() const { return odb_; }
+    inline const odb_Odb *handle() const { return odb_; }
 
     // -----------------------------------------------------------------------------------
     //
     //   General info print function
     //
     // -----------------------------------------------------------------------------------
-    void info() const;
+    void odb_info(bool verbose = false) const;
 
+   protected:
     // -----------------------------------------------------------------------------------
     //
     //   Specific info print functions
     //
     // -----------------------------------------------------------------------------------
-    void instances() const;
-    void nodes(const std::string &instance_name) const;
-    void elements(const std::string &instance_name) const;
-    void steps() const;
-    void frames(const std::string &step_name) const;
-    void fields(const std::string &step_name, const int frame_number) const;
+    void instances_info(bool verbose = false) const;
+    void nodes_info(const std::string &instance, bool verbose = false) const;
+    void elements_info(const std::string &instance, bool verbose = false) const;
+    void steps_info(bool verbose = false) const;
+    void frames_info(const std::string &step, bool verbose = false) const;
+    void fields_info(const std::string &step, int frame, bool verbose = false) const;
 
    private:
     fs::path path_;

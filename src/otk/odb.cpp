@@ -19,6 +19,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <vector>
 
 namespace otk {
@@ -55,51 +56,160 @@ Odb::~Odb() {
 
 // ---------------------------------------------------------------------------------------
 //
-//   General info print function
+//   General info print function (simple)
 //
 // ---------------------------------------------------------------------------------------
-void Odb::info() const {
-    fmt::print("ODB file info\n\n");
-    fmt::print(".. Path: {}\n", path_.string());
+void Odb::odb_info(bool verbose) const {
+    fmt::print("{:^50}\n\n", "ODB file info");
+    fmt::print("Path: {}\n", path_.string());
 
+    if (verbose) {
+        fmt::print("Analysis title: {}", odb_->analysisTitle().CStr());
+        fmt::print("Description: {}", odb_->description().CStr());
+    }
+
+    this->instances_info(verbose);
+    this->steps_info(verbose);
+}
+
+// ---------------------------------------------------------------------------------------
+//
+//   Instances info print function
+//
+// ---------------------------------------------------------------------------------------
+void Odb::instances_info(bool verbose) const {
     odb_Assembly &root_assembly = odb_->rootAssembly();
     odb_InstanceRepositoryIT instance_iterator(root_assembly.instances());
 
-    fmt::print(".. Number of instances: {}\n\n", root_assembly.instances().size());
+    fmt::print("Number of instances: {}\n", root_assembly.instances().size());
 
     for (instance_iterator.first(); !instance_iterator.isDone();
          instance_iterator.next()) {
         const odb_String &instance_name = instance_iterator.currentKey();
-        const odb_Instance &instance = instance_iterator.currentValue();
-        odb_Enum::odb_DimensionEnum instance_type = instance.embeddedSpace();
-        const odb_SequenceNode &instance_nodes = instance.nodes();
-        const odb_SequenceElement &instance_elements = instance.elements();
 
-        int number_nodes = instance_nodes.size();
-        int number_elements = instance_elements.size();
+        fmt::print(".. {}\n", instance_name.CStr());
+        this->elements_info(instance_name.CStr(), verbose);
+        this->nodes_info(instance_name.CStr(), verbose);
+    }
+}
 
-        fmt::print(".. Instance: {}\n", instance_name.CStr());
-        fmt::print(".... Type: {}\n", static_cast<int>(instance_type));
-        fmt::print(".... Number of nodes: {}\n", number_nodes);
-        fmt::print(".... Number of elements: {}\n", number_elements);
+// ---------------------------------------------------------------------------------------
+//
+//   Nodes info print function
+//
+// ---------------------------------------------------------------------------------------
+void Odb::nodes_info(const std::string &instance, bool verbose) const {
+    odb_Assembly &root_assembly = odb_->rootAssembly();
+    const odb_Instance &instance_object =
+        root_assembly.instances().constGet(instance.c_str());
+    odb_Enum::odb_DimensionEnum instance_type = instance_object.embeddedSpace();
+    const odb_SequenceNode &instance_nodes = instance_object.nodes();
+
+    int number_nodes = instance_nodes.size();
+
+    fmt::print(".... Number of nodes: {}\n", number_nodes);
+
+    if (verbose) {
+        fmt::print("       | {:^11} | {:^11} | {:^11} | {:^11} |\n", "Label", "X", "Y",
+                   "Z");
+
+        for (int i = 0; i < number_nodes; ++i) {
+            const odb_Node &node = instance_nodes[i];
+            if (instance_type == odb_Enum::THREE_D) {
+                fmt::print("       | {:^11d} | {: 10.4e} | {: 10.4e} | {: 10.4e} |\n",
+                           node.label(), node.coordinates()[0], node.coordinates()[1],
+                           node.coordinates()[2]);
+            } else if ((instance_type == odb_Enum::TWO_D_PLANAR) ||
+                       (instance_type == odb_Enum::AXISYMMETRIC)) {
+                fmt::print("       | {:^11d} | {: 10.4e} | {: 10.4e} | {:^11} |\n",
+                           node.label(), node.coordinates()[0], node.coordinates()[1],
+                           "           ");
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+//
+//   Elements info print function
+//
+// ---------------------------------------------------------------------------------------
+void Odb::elements_info(const std::string &instance, bool verbose) const {
+    odb_Assembly &root_assembly = odb_->rootAssembly();
+    const odb_Instance &instance_object =
+        root_assembly.instances().constGet(instance.c_str());
+    const odb_SequenceElement &instance_elements = instance_object.elements();
+
+    int number_elements = instance_elements.size();
+
+    auto get_section_category_name = [](const odb_SectionCategory &section_category) {
+        std::string section_category_raw_name{section_category.name().CStr()};
+        std::string section_category_name;
+
+        if (section_category_raw_name.find("shell < composite >") != std::string::npos) {
+            section_category_name = "Shell composite";
+        } else if (section_category_raw_name.find("shell") != std::string::npos) {
+            section_category_name = "Shell";
+        } else if (section_category_raw_name.find("solid < composite >") !=
+                   std::string::npos) {
+            section_category_name = "Solid composite";
+        } else if (section_category_raw_name.find("solid") != std::string::npos) {
+            section_category_name = "Solid";
+        } else {
+            section_category_name = "Other";
+        }
+
+        return section_category_name;
+    };
+
+    std::map<std::string, int> element_types;
+    std::map<std::string, int> section_categories;
+    for (int i = 0; i < number_elements; ++i) {
+        const odb_Element &element = instance_elements[i];
+        const odb_SectionCategory &section_category = element.sectionCategory();
+
+        std::string element_type = element.type().CStr();
+        std::string section_category_raw_name{section_category.name().CStr()};
+        std::string section_category_name = get_section_category_name(section_category);
+
+        if (auto it = element_types.find(element_type); it != element_types.end()) {
+            it->second++;
+        } else {
+            element_types[element_type] = 1;
+        }
+
+        if (auto it = section_categories.find(section_category_name);
+            it != section_categories.end()) {
+            it->second++;
+        } else {
+            section_categories[section_category_name] = 1;
+        }
+    }
+
+    fmt::print(".... Number of elements: {}\n", number_elements);
+    for (const auto &[element_type, count] : element_types) {
+        fmt::print("...... {} elements: {} \n", element_type, count);
+    }
+    for (const auto &[section_category, count] : section_categories) {
+        fmt::print("...... {} sections: {} \n", section_category, count);
+    }
+
+    if (verbose) {
+        fmt::print("       | {:^11} | {:^11} | {:^19} | {}\n", "Label", "Type", "Section",
+                   "Connectivity");
 
         for (int i = 0; i < number_elements; ++i) {
             const odb_Element &element = instance_elements[i];
-            std::string element_type = element.type().CStr();
-            int element_label = element.label();
-            int element_index = element.index();
+            int num_nodes = 0;
+            const int *const element_connectivity = element.connectivity(num_nodes);
+            const odb_SectionCategory &section_category = element.sectionCategory();
+            std::string section_category_name =
+                get_section_category_name(section_category);
 
-            int n = 0;
-            const int *const element_connectivity = element.connectivity(n);
+            fmt::print("       | {:^11d} | {:^11} | {:^19} | ", element.label(),
+                       element.type().CStr(), section_category_name);
 
-            fmt::print("...... Element: {}\n", i);
-            fmt::print("........ Type: {}\n", element_type);
-            fmt::print("........ Label: {}\n", element_label);
-            fmt::print("........ Index: {}\n", element_index);
-            fmt::print("........ Number of nodes: {}\n", n);
-            fmt::print("........ Connectivity: ");
-
-            for (int j = 0; j < n; ++j) {
+            for (int j = 0; j < num_nodes; ++j) {
                 fmt::print("{} ", element_connectivity[j]);
             }
             fmt::print("\n");
@@ -107,153 +217,127 @@ void Odb::info() const {
     }
 }
 
-void Odb::instances() const {
-    fmt::print("OBD instances info\n\n");
-
-    odb_Assembly &root_assembly = odb_->rootAssembly();
-    odb_InstanceRepositoryIT instance_iterator(root_assembly.instances());
-
-    for (instance_iterator.first(); !instance_iterator.isDone();
-         instance_iterator.next()) {
-        const odb_String &instance_name = instance_iterator.currentKey();
-        const odb_Instance &instance = instance_iterator.currentValue();
-
-        fmt::print("Instance: {}\n", instance_name.CStr());
-        fmt::print(".. Type: {}\n", static_cast<int>(instance.embeddedSpace()));
-        fmt::print(".. Number of nodes: {}\n", instance.nodes().size());
-        fmt::print(".. Number of elements: {}\n", instance.elements().size());
-    }
-}
-
-void Odb::nodes(const std::string &instance_name) const {
-    fmt::print("ODB nodes info\n\n");
-
-    odb_Assembly &root_assembly = odb_->rootAssembly();
-    const odb_Instance &instance =
-        root_assembly.instances().constGet(instance_name.c_str());
-    odb_Enum::odb_DimensionEnum instance_type = instance.embeddedSpace();
-    const odb_SequenceNode &instance_nodes = instance.nodes();
-
-    int num_nodes = instance_nodes.size();
-
-    fmt::print("Number of nodes: {}\n\n", num_nodes);
-
-    for (int i = 0; i < num_nodes; ++i) {
-        const odb_Node &node = instance_nodes[i];
-        fmt::print("Node: {}\n", i);
-        fmt::print(".. Label: {}\n", node.label());
-        if (instance_type == odb_Enum::THREE_D) {
-            fmt::print(".. Dimension: 3\n");
-            fmt::print(".. Coordinates: ({:.6e}, {:.6e}, {:.6e})\n",
-                       node.coordinates()[0], node.coordinates()[1],
-                       node.coordinates()[2]);
-        } else if ((instance_type == odb_Enum::TWO_D_PLANAR) ||
-                   (instance_type == odb_Enum::AXISYMMETRIC)) {
-            fmt::print(".. Dimension: 2\n");
-            fmt::print(".. Coordinates: ({:.6e}, {:.6e})\n", node.coordinates()[0],
-                       node.coordinates()[1]);
-        }
-    }
-}
-
-void Odb::elements(const std::string &instance_name) const {
-    fmt::print("ODB elements info\n\n");
-
-    odb_Assembly &root_assembly = odb_->rootAssembly();
-    const odb_Instance &instance =
-        root_assembly.instances().constGet(instance_name.c_str());
-    const odb_SequenceElement &instance_elements = instance.elements();
-
-    int num_elements = instance_elements.size();
-
-    fmt::print("Number of elements: {}\n\n", num_elements);
-
-    for (int i = 0; i < num_elements; ++i) {
-        const odb_Element &element = instance_elements[i];
-        int num_nodes = 0;
-        const int *const element_connectivity = element.connectivity(num_nodes);
-
-        fmt::print("Element: {}\n", i);
-        fmt::print(".. Type: {}\n", element.type().CStr());
-        fmt::print(".. Label: {}\n", element.label());
-        fmt::print(".. Index: {}\n", element.index());
-        fmt::print(".. Number of nodes: {}\n", num_nodes);
-        fmt::print(".. Connectivity: ");
-
-        for (int j = 0; j < num_nodes; ++j) {
-            fmt::print("{} ", element_connectivity[j]);
-        }
-        fmt::print("\n");
-    }
-}
-
-void Odb::steps() const {
-    fmt::print("ODB steps info\n\n");
-
+// ---------------------------------------------------------------------------------------
+//
+//   Steps info print function
+//
+// ---------------------------------------------------------------------------------------
+void Odb::steps_info(bool verbose) const {
     odb_StepRepositoryIT step_iterator(odb_->steps());
     int num_steps = odb_->steps().size();
 
-    fmt::print("Number of steps: {}\n\n", num_steps);
+    fmt::print("Number of steps: {}\n", num_steps);
 
     for (step_iterator.first(); !step_iterator.isDone(); step_iterator.next()) {
         const odb_Step &step = step_iterator.currentValue();
 
-        fmt::print("Step: {}\n", step.name().CStr());
-        fmt::print(".. Number of frames: {}\n", step.frames().size());
+        fmt::print(".. {} [{} frames]\n", step.name().CStr(), step.frames().size());
+
+        this->frames_info(step.name().CStr(), verbose);
     }
 }
 
-void Odb::frames(const std::string &step_name) const {
-    fmt::print("ODB frames info\n\n");
+// ---------------------------------------------------------------------------------------
+//
+//   Frames info print function
+//
+// ---------------------------------------------------------------------------------------
+void Odb::frames_info(const std::string &step, bool verbose) const {
+    const odb_Step &step_object = odb_->steps().constGet(step.c_str());
+    const odb_SequenceFrame &frames = step_object.frames();
+    int number_frames = frames.size();
 
-    const odb_Step &step = odb_->steps().constGet(step_name.c_str());
-    const odb_SequenceFrame &frames = step.frames();
-    int num_frames = frames.size();
+    fmt::print(".... Starting value: {}\n", frames[0].frameValue());
+    fmt::print(".... Ending value: {}\n", frames[number_frames - 1].frameValue());
 
-    fmt::print("Step: {}\n", step_name);
-    fmt::print("Number of frames: {}\n\n", num_frames);
+    if (verbose) {
+        fmt::print("     | {:^11} | {:^11} | {:^11} |\n", "Frame ID", "Increment",
+                   "Value");
 
-    for (int i = 0; i < num_frames; ++i) {
-        const odb_Frame &frame = frames[i];
-
-        fmt::print("Frame: {}\n", i);
-        fmt::print(".. Id: {}\n", frame.frameId());
-        fmt::print(".. Index: {}\n", frame.frameIndex());
-        fmt::print(".. Value: {}\n", frame.frameValue());
-        fmt::print(".. Increment: {}\n", frame.incrementNumber());
+        for (int i = 0; i < number_frames; ++i) {
+            const odb_Frame &frame = frames[i];
+            fmt::print("     | {:^11d} | {:^11d} | {: 10.4e} |\n", frame.frameId(),
+                       frame.incrementNumber(), frame.frameValue());
+        }
     }
+
+    this->fields_info(step, 0, verbose);
 }
 
-void Odb::fields(const std::string &step_name, const int frame_number) const {
-    fmt::print("ODB fields info\n\n");
-
-    const odb_Step &step = odb_->steps().constGet(step_name.c_str());
-    const odb_Frame &frame = step.frames().constGet(frame_number);
-    odb_FieldOutputRepository field_outputs = frame.fieldOutputs();
+// ---------------------------------------------------------------------------------------
+//
+//   Fields info print function
+//
+// ---------------------------------------------------------------------------------------
+void Odb::fields_info(const std::string &step, int frame, bool verbose) const {
+    const odb_Step &step_object = odb_->steps().constGet(step.c_str());
+    const odb_Frame &frame_object = step_object.frames().constGet(frame);
+    const odb_FieldOutputRepository &field_outputs = frame_object.fieldOutputs();
     odb_FieldOutputRepositoryIT field_output_iterator(field_outputs);
 
-    fmt::print("Step: {}\n", step_name);
-    fmt::print("Frame ID: {}\n", frame.frameId());
-    fmt::print("Number of field outputs: {}\n\n", field_outputs.size());
+    fmt::print(".... Number of field outputs: {}\n", field_outputs.size());
+
+    if (verbose) {
+        fmt::print("     | {:^35} | {:^7} | {:^11} | {:^7} | {:^35} |\n", "Name",
+                   "Blocks", "Orientation", "Points", "Location");
+    }
 
     for (field_output_iterator.first(); !field_output_iterator.isDone();
          field_output_iterator.next()) {
         const odb_FieldOutput &field_output = field_output_iterator.currentValue();
-        const odb_SequenceFieldLocation &locations = field_output.locations();
-        int num_locations = locations.size();
 
-        fmt::print("Field: {}\n", field_output.name().CStr());
-        fmt::print(".. Number of blocks: {}\n", field_output.bulkDataBlocks().size());
-        fmt::print(".. Has orientation: {}\n", field_output.hasOrientation());
-        fmt::print(".. Number of locations: {}\n", num_locations);
+        if (verbose) {
+            const odb_SequenceFieldLocation &locations = field_output.locations();
+            int num_locations = locations.size();
 
-        for (int i = 0; i < num_locations; ++i) {
-            const odb_FieldLocation &location = locations[i];
+            auto get_position_name = [](odb_Enum::odb_ResultPositionEnum position) {
+                switch (position) {
+                    case odb_Enum::odb_ResultPositionEnum::UNDEFINED_POSITION:
+                        return "Undefined";
+                    case odb_Enum::odb_ResultPositionEnum::NODAL:
+                        return "Nodal";
+                    case odb_Enum::odb_ResultPositionEnum::ELEMENT_NODAL:
+                        return "Element Nodal";
+                    case odb_Enum::odb_ResultPositionEnum::INTEGRATION_POINT:
+                        return "Integration Point";
+                    case odb_Enum::odb_ResultPositionEnum::CENTROID:
+                        return "Centroid";
+                    case odb_Enum::odb_ResultPositionEnum::ELEMENT_FACE:
+                        return "Element Face";
+                    case odb_Enum::odb_ResultPositionEnum::ELEMENT_FACE_INTEGRATION_POINT:
+                        return "Element Face Integration Point";
+                    case odb_Enum::odb_ResultPositionEnum::SURFACE_INTEGRATION_POINT:
+                        return "Surface Integration Point";
+                    case odb_Enum::odb_ResultPositionEnum::WHOLE_ELEMENT:
+                        return "Whole Element";
+                    case odb_Enum::odb_ResultPositionEnum::WHOLE_REGION:
+                        return "Whole Region";
+                    case odb_Enum::odb_ResultPositionEnum::WHOLE_PART_INSTANCE:
+                        return "Whole Part Instance";
+                    case odb_Enum::odb_ResultPositionEnum::WHOLE_MODEL:
+                        return "Whole Model";
+                    case odb_Enum::odb_ResultPositionEnum::GENERAL_PARTICLE:
+                        return "General Particle";
+                    case odb_Enum::odb_ResultPositionEnum::SURFACE_FACET:
+                        return "Surface Facet";
+                    case odb_Enum::odb_ResultPositionEnum::SURFACE_NODAL:
+                        return "Surface Nodal";
+                    default:
+                        return "Unknown";
+                }
+            };
 
-            fmt::print(".... Location: {}\n", i);
-            fmt::print("...... Position: {}\n", static_cast<int>(location.position()));
-            fmt::print("...... Number of section points: {}\n",
-                       location.sectionPoint().size());
+            for (int i = 0; i < num_locations; ++i) {
+                const odb_FieldLocation &location = locations[i];
+
+                fmt::print("     | {:^35} | {:^7d} | {:^11} | {:^7d} | {:^35} |\n",
+                           field_output.name().CStr(),
+                           field_output.bulkDataBlocks().size(),
+                           field_output.hasOrientation(), location.sectionPoint().size(),
+                           get_position_name(location.position()));
+            }
+        } else {
+            fmt::print("...... {}\n", field_output.name().CStr());
         }
     }
 }
