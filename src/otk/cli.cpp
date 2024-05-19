@@ -99,6 +99,37 @@ void clear_screen() {
 
 // ---------------------------------------------------------------------------------------
 //
+//   Format the size of a file in bytes
+//
+// ---------------------------------------------------------------------------------------
+std::string format_byte_size(size_t size) {
+    constexpr unsigned long long KB{1024ull};
+    constexpr unsigned long long MB{1024ull * KB};
+    constexpr unsigned long long GB{1024ull * MB};
+    constexpr unsigned long long TB{1024ull * GB};
+
+    constexpr long double KB_F{1024.0};
+    constexpr long double MB_F{1024.0 * KB_F};
+    constexpr long double GB_F{1024.0 * MB_F};
+    constexpr long double TB_F{1024.0 * GB_F};
+
+    if (size < KB) {
+        return fmt::format("{} B", size);
+    }
+    if (size < MB) {
+        return fmt::format("{:.2f} KB", size / KB_F);
+    }
+    if (size < GB) {
+        return fmt::format("{:.2f} MB", size / MB_F);
+    }
+    if (size < TB) {
+        return fmt::format("{:.2f} GB", size / GB_F);
+    }
+    return fmt::format("{:.2f} TB", size / TB_F);
+}
+
+// ---------------------------------------------------------------------------------------
+//
 //   File finder utility to navigate the file system
 //
 // ---------------------------------------------------------------------------------------

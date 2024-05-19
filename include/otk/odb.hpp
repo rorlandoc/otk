@@ -46,6 +46,13 @@ class Odb {
     // -----------------------------------------------------------------------------------
     inline std::string path() const { return fs::absolute(path_.parent_path()).string(); }
     inline std::string name() const { return path_.filename().string(); }
+    inline size_t size() const { return fs::file_size(path_); }
+
+    // -----------------------------------------------------------------------------------
+    //
+    //   Access the native ODB handle
+    //
+    // -----------------------------------------------------------------------------------
     inline const odb_Odb *handle() const { return odb_; }
     inline odb_Odb *handle() { return odb_; }
 

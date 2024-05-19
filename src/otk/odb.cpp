@@ -54,6 +54,7 @@ Odb::~Odb() {
 void Odb::odb_info(bool verbose) const {
     fmt::print("{:^50}\n\n", "ODB file info");
     fmt::print("Path: {}\n", path_.string());
+    fmt::print("Size: {}\n", format_byte_size(this->size()));
 
     if (verbose) {
         fmt::print("Analysis title: {}", odb_->analysisTitle().CStr());
