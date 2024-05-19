@@ -51,9 +51,13 @@ FetchContent_Declare(fmt
 FetchContent_Declare(argparse
     GIT_REPOSITORY "https://github.com/p-ranav/argparse"
     GIT_TAG "v3.0")
+FetchContent_Declare(json
+    GIT_REPOSITORY "https://github.com/nlohmann/json"
+    GIT_TAG "v3.11.3")
 
 FetchContent_GetProperties(fmt)
 FetchContent_GetProperties(argparse)
+FetchContent_GetProperties(json)
 
 if(NOT fmt_POPULATED)
     FetchContent_Populate(fmt)
@@ -65,19 +69,28 @@ if(NOT argparse_POPULATED)
     add_subdirectory(${argparse_SOURCE_DIR} ${argparse_BINARY_DIR} EXCLUDE_FROM_ALL)
 endif()
 
-add_executable(otk
-    ${CMAKE_SOURCE_DIR}/src/otk/main.cpp
+if(NOT json_POPULATED)
+    FetchContent_Populate(json)
+    add_subdirectory(${json_SOURCE_DIR} ${json_BINARY_DIR} EXCLUDE_FROM_ALL)
+endif()
 
-    ${CMAKE_SOURCE_DIR}/src/otk/file.cpp
-    ${CMAKE_SOURCE_DIR}/include/otk/file.hpp
+add_executable(otk
+    ${CMAKE_SOURCE_DIR}/src/otk/otk.cpp
+
+    ${CMAKE_SOURCE_DIR}/src/otk/cli.cpp
+    ${CMAKE_SOURCE_DIR}/include/otk/cli.hpp
 
     ${CMAKE_SOURCE_DIR}/src/otk/odb.cpp
-    ${CMAKE_SOURCE_DIR}/include/otk/odb.hpp)
+    ${CMAKE_SOURCE_DIR}/include/otk/odb.hpp
+
+    ${CMAKE_SOURCE_DIR}/src/otk/output.cpp
+    ${CMAKE_SOURCE_DIR}/include/otk/output.hpp)
 target_link_libraries(otk PUBLIC
     ${VTK_LIBRARIES}
     ${abq_odb_api_libraries}
     fmt::fmt-header-only
-    argparse)
+    argparse
+    nlohmann_json::nlohmann_json)
 target_include_directories(otk PUBLIC
     ${abq_odb_api_includes}
     ${CMAKE_SOURCE_DIR}/include)
