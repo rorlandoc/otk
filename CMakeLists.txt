@@ -84,7 +84,10 @@ add_executable(otk
     ${CMAKE_SOURCE_DIR}/include/otk/odb.hpp
 
     ${CMAKE_SOURCE_DIR}/src/otk/output.cpp
-    ${CMAKE_SOURCE_DIR}/include/otk/output.hpp)
+    ${CMAKE_SOURCE_DIR}/include/otk/output.hpp
+
+    ${CMAKE_SOURCE_DIR}/src/otk/converter.cpp
+    ${CMAKE_SOURCE_DIR}/include/otk/converter.hpp)
 target_link_libraries(otk PUBLIC
     ${VTK_LIBRARIES}
     ${abq_odb_api_libraries}

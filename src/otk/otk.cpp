@@ -7,7 +7,9 @@
 #include <nlohmann/json.hpp>
 
 #include "otk/cli.hpp"
+#include "otk/converter.hpp"
 #include "otk/odb.hpp"
+#include "otk/output.hpp"
 
 #pragma message("OTK build version: " STR(OTK_VERSION))
 
@@ -80,13 +82,24 @@ int main(int argc, char *argv[]) {
                                          json_file.string()));
             return 1;
         }
+        fmt::print("JSON output request file: {}\n", json_file.string());
 
         // Read the JSON file
         using namespace nlohmann;
         std::ifstream json_stream(json_file);
         json json_output_request = json::parse(json_stream);
 
-        // Convert the ODB file to VTK
+        // Validate the JSON file
+        if (!otk::is_output_request_valid(json_output_request)) {
+            otk::print_error("Invalid JSON output request syntax");
+            return 1;
+        }
+        fmt::print("JSON output request is valid\n");
+
+        // Convert the ODB file to VTKk
+        otk::Converter converter{json_output_request};
+        converter.convert_mesh(odb);
+        converter.write_mesh(file);
 
         otk::print_footer();
         return 0;
