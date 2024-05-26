@@ -40,7 +40,21 @@ endif()
 
 get_filename_component(otk_abaqus_pardir ${otk_abaqus_dir} DIRECTORY)
 
-set(abq_odb_api_libraries "${otk_abaqus_dir}/code/lib/ABQSMAOdbApi.lib")
+set(abq_odb_api_libraries
+    "${otk_abaqus_dir}/code/lib/ABQSMAOdbApi.lib"
+    "${otk_abaqus_dir}/code/lib/ABQSMAOdbCore.lib"
+    "${otk_abaqus_dir}/code/lib/ABQSMAOdbAttrEO2.lib"
+    "${otk_abaqus_dir}/code/lib/ABQSMAOdbAttrEO.lib"
+    "${otk_abaqus_dir}/code/lib/ABQSMAOdbCoreGeom.lib"
+    "${otk_abaqus_dir}/code/lib/ABQSMAShpCore.lib"
+    "${otk_abaqus_dir}/code/lib/ABQSMARomDiagEx.lib"
+    "${otk_abaqus_dir}/code/lib/ABQSMARfmInterface.lib"
+    "${otk_abaqus_dir}/code/lib/ABQSMAAbuGeom.lib"
+    "${otk_abaqus_dir}/code/lib/ABQSMAAbuBasicUtils.lib"
+    "${otk_abaqus_dir}/code/lib/ABQSMABasShared.lib"
+    "${otk_abaqus_dir}/code/lib/ABQSMABasCoreUtils.lib"
+    "${otk_abaqus_dir}/code/lib/ABQSMABASAlloc.lib"
+)
 set(abq_odb_api_includes "${otk_abaqus_dir}/code/include" "${otk_abaqus_pardir}")
 
 include(FetchContent)

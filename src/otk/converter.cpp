@@ -9,6 +9,8 @@
 #include <vtkXMLPartitionedDataSetCollectionWriter.h>
 #include <vtkXMLUnstructuredGridWriter.h>
 
+#include <regex>
+
 namespace otk {
 
 // ---------------------------------------------------------------------------------------
@@ -26,20 +28,93 @@ void Converter::convert_mesh(otk::Odb& odb) {
         odb_Enum::odb_DimensionEnum instance_type = instance.embeddedSpace();
         std::string instance_name{instance.name().cStr()};
 
-        fmt::print("Converting mesh data for instance: {}\n", instance_name);
+        fmt::print("Converting mesh data for instance {} ... ", instance_name);
 
         const odb_SequenceNode& instance_nodes = instance.nodes();
         const odb_SequenceElement& instance_elements = instance.elements();
 
         std::vector<VTKCellType> cell_types = get_cell_types(instance_elements);
         if (cell_types.empty()) {
-            fmt::print("No supported elements found for instance {}\n", instance_name);
+            fmt::print("skipping (no supported elements found)\n");
             continue;
         }
 
         std::unordered_map<int, vtkIdType> node_map;
         points_[instance_name] = get_points(node_map, instance_nodes, instance_type);
         cells_[instance_name] = get_cells(node_map, instance_elements);
+
+        fmt::print("done\n");
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+//
+//   Convert field data to VTK format
+//
+// ---------------------------------------------------------------------------------------
+void Converter::convert_fields(otk::Odb& odb) {
+    const odb_Assembly& root_assembly = odb.handle()->rootAssembly();
+    odb_InstanceRepositoryIT instance_iterator(root_assembly.instances());
+
+    using namespace nlohmann;
+
+    json summary = odb.summary();
+    std::map<std::string, std::vector<int>> frame_numbers;
+    std::map<std::string, std::map<int, std::vector<std::string>>> field_names;
+    for (const auto& step : summary["steps"]) {
+        auto step_name = step["name"].template get<std::string>();
+        for (const auto& frame : step["frames"]) {
+            auto frame_number = frame["increment"].template get<int>();
+            frame_numbers[step_name].push_back(frame_number);
+            for (const auto& field : frame["fields"]) {
+                auto field_name = field["name"].template get<std::string>();
+                field_names[step_name][frame_number].push_back(field_name);
+            }
+            std::sort(field_names[step_name][frame_number].begin(),
+                      field_names[step_name][frame_number].end());
+        }
+    }
+
+    json fields_request = output_request_["fields"];
+    std::vector<std::string> fields_requested;
+    for (const auto& field_info : fields_request) {
+        fields_requested.push_back(field_info["key"].template get<std::string>());
+    }
+
+    json frames_request = output_request_["frames"];
+    json matches;
+    for (const auto& frame_info : frames_request) {
+        auto step_name = frame_info["step"].template get<std::string>();
+        auto frame_list = frame_info["list"].template get<std::vector<int>>();
+        std::sort(frame_list.begin(), frame_list.end());
+
+        std::vector<int> frame_matches;
+        std::set_intersection(
+            frame_list.begin(), frame_list.end(), frame_numbers[step_name].begin(),
+            frame_numbers[step_name].end(), std::back_inserter(frame_matches));
+
+        std::map<std::string, std::map<int, std::vector<std::string>>> field_matches;
+        for (const auto& frame : frame_matches) {
+            for (const auto& request : fields_requested) {
+                std::regex regex(request);
+                for (const auto& field_name : field_names[step_name][frame]) {
+                    if (std::regex_match(field_name, regex)) {
+                        field_matches[step_name][frame].push_back(field_name);
+                    }
+                }
+            }
+        }
+        matches[step_name]["fields"] = field_matches;
+        matches[step_name]["frames"] = frame_matches;
+
+        fmt::print("Output request matches for step: {}\n", step_name);
+        fmt::print(".. Frames:\n.... {}", fmt::join(frame_matches, "\n.... "));
+        fmt::print("\n.. Fields:\n");
+        for (const auto& [frame, fields] : field_matches[step_name]) {
+            fmt::print(".... Frame: {}\n...... {}", frame,
+                       fmt::join(fields, "\n...... "));
+            fmt::print("\n");
+        }
     }
 }
 
@@ -48,7 +123,7 @@ void Converter::convert_mesh(otk::Odb& odb) {
 //   Write mesh data to VTU file
 //
 // ---------------------------------------------------------------------------------------
-void Converter::write_mesh(fs::path file) {
+void Converter::write(fs::path file) {
     auto writer = vtkSmartPointer<vtkXMLPartitionedDataSetCollectionWriter>::New();
     auto collection = vtkSmartPointer<vtkPartitionedDataSetCollection>::New();
 

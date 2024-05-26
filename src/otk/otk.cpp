@@ -99,7 +99,8 @@ int main(int argc, char *argv[]) {
         // Convert the ODB file to VTKk
         otk::Converter converter{json_output_request};
         converter.convert_mesh(odb);
-        converter.write_mesh(file);
+        converter.convert_fields(odb);
+        converter.write(file);
 
         otk::print_footer();
         return 0;

@@ -335,4 +335,226 @@ void Odb::fields_info(const std::string &step, int frame, bool verbose) const {
     }
 }
 
+// ---------------------------------------------------------------------------------------
+//
+//   JSON summary
+//
+// ---------------------------------------------------------------------------------------
+nlohmann::json Odb::summary() const {
+    nlohmann::json summary;
+
+    odb_StepRepositoryIT step_it(odb_->steps());
+    for (step_it.first(); !step_it.isDone(); step_it.next()) {
+        const odb_Step &step = step_it.currentValue();
+        nlohmann::json step_json;
+
+        step_json["name"] = std::string{step.name().CStr()};
+
+        const odb_SequenceFrame &frames = step.frames();
+        int num_frames = frames.size();
+
+        for (int i = 0; i < num_frames; ++i) {
+            const odb_Frame &frame = frames[i];
+            nlohmann::json frame_json;
+
+            frame_json["id"] = frame.frameId();
+            frame_json["increment"] = frame.incrementNumber();
+            frame_json["value"] = frame.frameValue();
+
+            const odb_FieldOutputRepository &field_outputs = frame.fieldOutputs();
+            odb_FieldOutputRepositoryIT field_it(field_outputs);
+
+            for (field_it.first(); !field_it.isDone(); field_it.next()) {
+                const odb_FieldOutput &field_output = field_it.currentValue();
+                nlohmann::json field_json;
+
+                field_json["name"] = std::string{field_output.name().CStr()};
+
+                const odb_SequenceFieldBulkData &blocks = field_output.bulkDataBlocks();
+                int num_blocks = blocks.size();
+                for (int j = 0; j < num_blocks; ++j) {
+                    const odb_FieldBulkData &block = blocks[j];
+                    nlohmann::json block_json;
+
+                    block_json["element_type"] =
+                        std::string{block.baseElementType().CStr()};
+                    block_json["instance"] = std::string{block.instance().name().CStr()};
+                    block_json["length"] = block.length();
+                    block_json["width"] = block.width();
+                    block_json["numElements"] = block.numberOfElements();
+                    block_json["numNodes"] = block.numberOfNodes();
+
+                    field_json["blocks"].push_back(block_json);
+                }
+
+                field_json["blocks"] = field_output.bulkDataBlocks().size();
+
+                const odb_SequenceString &components = field_output.componentLabels();
+                int num_components = components.size();
+                for (int j = 0; j < num_components; ++j) {
+                    field_json["components"].push_back(std::string{components[j].CStr()});
+                }
+
+                const odb_SequenceInvariant &invariants = field_output.validInvariants();
+                int num_invariants = invariants.size();
+                for (int j = 0; j < num_invariants; ++j) {
+                    odb_Enum::odb_InvariantEnum a = invariants[j];
+                    switch (invariants[j]) {
+                        case odb_Enum::odb_InvariantEnum::MAX_PRINCIPAL:
+                            field_json["invariants"].push_back("Max Principal");
+                            break;
+                        case odb_Enum::odb_InvariantEnum::MID_PRINCIPAL:
+                            field_json["invariants"].push_back("Mid Principal");
+                            break;
+                        case odb_Enum::odb_InvariantEnum::MIN_PRINCIPAL:
+                            field_json["invariants"].push_back("Min Principal");
+                            break;
+                        case odb_Enum::odb_InvariantEnum::MISES:
+                            field_json["invariants"].push_back("Mises");
+                            break;
+                        case odb_Enum::odb_InvariantEnum::TRESCA:
+                            field_json["invariants"].push_back("Tresca");
+                            break;
+                        case odb_Enum::odb_InvariantEnum::PRESS:
+                            field_json["invariants"].push_back("Press");
+                            break;
+                        case odb_Enum::odb_InvariantEnum::INV3:
+                            field_json["invariants"].push_back("Inv3");
+                            break;
+                        case odb_Enum::odb_InvariantEnum::MAGNITUDE:
+                            field_json["invariants"].push_back("Magnitude");
+                            break;
+                        case odb_Enum::odb_InvariantEnum::MAX_INPLANE_PRINCIPAL:
+                            field_json["invariants"].push_back("Max Inplane Principal");
+                            break;
+                        case odb_Enum::odb_InvariantEnum::MIN_INPLANE_PRINCIPAL:
+                            field_json["invariants"].push_back("Min Inplane Principal");
+                            break;
+                        case odb_Enum::odb_InvariantEnum::OUTOFPLANE_PRINCIPAL:
+                            field_json["invariants"].push_back("Outofplane Principal");
+                            break;
+                        case odb_Enum::odb_InvariantEnum::MAX_PRINCIPAL_ABS:
+                            field_json["invariants"].push_back("Max Principal Abs");
+                            break;
+                        default:
+                            field_json["invariants"].push_back("Unknown");
+                            break;
+                    }
+                }
+
+                switch (field_output.type()) {
+                    case odb_Enum::odb_DataTypeEnum::BOOLEAN:
+                        field_json["type"] = "Boolean";
+                        break;
+                    case odb_Enum::odb_DataTypeEnum::INTEGER:
+                        field_json["type"] = "Integer";
+                        break;
+                    case odb_Enum::odb_DataTypeEnum::SCALAR:
+                        field_json["type"] = "Scalar";
+                        break;
+                    case odb_Enum::odb_DataTypeEnum::VECTOR:
+                        field_json["type"] = "Vector";
+                        break;
+                    case odb_Enum::odb_DataTypeEnum::MATRIX:
+                        field_json["type"] = "Matrix";
+                        break;
+                    case odb_Enum::odb_DataTypeEnum::TENSOR_3D_FULL:
+                        field_json["type"] = "3D Full Tensor";
+                        break;
+                    case odb_Enum::odb_DataTypeEnum::TENSOR_3D_PLANAR:
+                        field_json["type"] = "3D Planar Tensor";
+                        break;
+                    case odb_Enum::odb_DataTypeEnum::TENSOR_3D_SURFACE:
+                        field_json["type"] = "3D Surface Tensor";
+                        break;
+                    case odb_Enum::odb_DataTypeEnum::TENSOR_2D_PLANAR:
+                        field_json["type"] = "2D Planar Tensor";
+                        break;
+                    case odb_Enum::odb_DataTypeEnum::TENSOR_2D_SURFACE:
+                        field_json["type"] = "2D Surface Tensor";
+                        break;
+                    case odb_Enum::odb_DataTypeEnum::QUATERNION_3D:
+                        field_json["type"] = "3D Quaternion";
+                        break;
+                    case odb_Enum::odb_DataTypeEnum::QUATERNION_2D:
+                        field_json["type"] = "2D Quaternion";
+                        break;
+                    default:
+                        field_json["type"] = "Unknown";
+                        break;
+                }
+
+                const odb_SequenceFieldLocation &locations = field_output.locations();
+                int num_locations = locations.size();
+
+                for (int j = 0; j < num_locations; ++j) {
+                    const odb_FieldLocation &location = locations[j];
+                    nlohmann::json location_json;
+
+                    switch (location.position()) {
+                        case odb_Enum::odb_ResultPositionEnum::NODAL:
+                            location_json["position"] = "Nodal";
+                            break;
+                        case odb_Enum::odb_ResultPositionEnum::ELEMENT_NODAL:
+                            location_json["position"] = "Element Nodal";
+                            break;
+                        case odb_Enum::odb_ResultPositionEnum::INTEGRATION_POINT:
+                            location_json["position"] = "Integration Point";
+                            break;
+                        case odb_Enum::odb_ResultPositionEnum::CENTROID:
+                            location_json["position"] = "Centroid";
+                            break;
+                        case odb_Enum::odb_ResultPositionEnum::ELEMENT_FACE:
+                            location_json["position"] = "Element Face";
+                            break;
+                        case odb_Enum::odb_ResultPositionEnum::
+                            ELEMENT_FACE_INTEGRATION_POINT:
+                            location_json["position"] = "Element Face Integration Point";
+                            break;
+                        case odb_Enum::odb_ResultPositionEnum::SURFACE_INTEGRATION_POINT:
+                            location_json["position"] = "Surface Integration Point";
+                            break;
+                        case odb_Enum::odb_ResultPositionEnum::WHOLE_ELEMENT:
+                            location_json["position"] = "Whole Element";
+                            break;
+                        case odb_Enum::odb_ResultPositionEnum::WHOLE_REGION:
+                            location_json["position"] = "Whole Region";
+                            break;
+                        case odb_Enum::odb_ResultPositionEnum::WHOLE_PART_INSTANCE:
+                            location_json["position"] = "Whole Part Instance";
+                            break;
+                        case odb_Enum::odb_ResultPositionEnum::WHOLE_MODEL:
+                            location_json["position"] = "Whole Model";
+                            break;
+                        case odb_Enum::odb_ResultPositionEnum::GENERAL_PARTICLE:
+                            location_json["position"] = "General Particle";
+                            break;
+                        case odb_Enum::odb_ResultPositionEnum::SURFACE_FACET:
+                            location_json["position"] = "Surface Facet";
+                            break;
+                        case odb_Enum::odb_ResultPositionEnum::SURFACE_NODAL:
+                            location_json["position"] = "Surface Nodal";
+                            break;
+                        default:
+                            location_json["position"] = "Unknown";
+                            break;
+                    }
+
+                    location_json["points"] = location.sectionPoint().size();
+
+                    field_json["locations"].push_back(location_json);
+                }
+
+                frame_json["fields"].push_back(field_json);
+            }
+
+            step_json["frames"].push_back(frame_json);
+        }
+
+        summary["steps"].push_back(step_json);
+    }
+
+    return summary;
+}
+
 }  // namespace otk

@@ -12,6 +12,8 @@
 
 #include <odb_API.h>
 
+#include <nlohmann/json.hpp>
+
 #include "otk/cli.hpp"
 
 namespace otk {
@@ -47,6 +49,8 @@ class Odb {
     inline std::string path() const { return fs::absolute(path_.parent_path()).string(); }
     inline std::string name() const { return path_.filename().string(); }
     inline size_t size() const { return fs::file_size(path_); }
+
+    nlohmann::json summary() const;
 
     // -----------------------------------------------------------------------------------
     //
