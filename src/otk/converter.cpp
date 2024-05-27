@@ -116,6 +116,79 @@ void Converter::convert_fields(otk::Odb& odb) {
             fmt::print("\n");
         }
     }
+
+    odb_Odb* handle = odb.handle();
+    for (const auto& [step, match_info] : matches.items()) {
+        fmt::print("Starting field data conversion for step: {}\n", step);
+
+        const odb_Step& step_obj = handle->steps().constGet(step.c_str());
+
+        auto field_matches =
+            match_info["fields"].template get<std::map<int, std::vector<std::string>>>();
+        for (const auto& [frame, fields] : field_matches) {
+            fmt::print("Converting field data for frame: {}\n", frame);
+
+            const odb_Frame& frame_obj = step_obj.frames().constGet(frame);
+            const odb_FieldOutputRepository& fields_repo = frame_obj.fieldOutputs();
+
+            for (const auto& field : fields) {
+                fmt::print("Converting field: {}\n", field);
+
+                const odb_FieldOutput& field_obj = fields_repo.constGet(field.c_str());
+                const odb_SequenceFieldBulkData& field_data = field_obj.bulkDataBlocks();
+
+                int num_blocks = field_data.size();
+                fmt::print(".. Processing {} bulk data blocks\n", num_blocks);
+
+                for (int iblock = 0; iblock < num_blocks; iblock++) {
+                    fmt::print(".... Block {} ... ", iblock);
+
+                    const odb_FieldBulkData& block = field_data[iblock];
+                    odb_Enum::odb_ResultPositionEnum position = block.position();
+                    odb_Enum::odb_DataTypeEnum data_type = block.type();
+
+                    switch (position) {
+                        case odb_Enum::odb_ResultPositionEnum::NODAL: {
+                            switch (data_type) {
+                                case odb_Enum::odb_DataTypeEnum::SCALAR: {
+                                    break;
+                                }
+                                case odb_Enum::odb_DataTypeEnum::VECTOR: {
+                                    break;
+                                }
+                                case odb_Enum::odb_DataTypeEnum::TENSOR_2D_PLANAR: {
+                                    break;
+                                }
+                                case odb_Enum::odb_DataTypeEnum::TENSOR_3D_FULL: {
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                        case odb_Enum::odb_ResultPositionEnum::INTEGRATION_POINT: {
+                            switch (data_type) {
+                                case odb_Enum::odb_DataTypeEnum::SCALAR: {
+                                    break;
+                                }
+                                case odb_Enum::odb_DataTypeEnum::VECTOR: {
+                                    break;
+                                }
+                                case odb_Enum::odb_DataTypeEnum::TENSOR_2D_PLANAR: {
+                                    break;
+                                }
+                                case odb_Enum::odb_DataTypeEnum::TENSOR_3D_FULL: {
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                    }
+
+                    fmt::print("done\n");
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------
