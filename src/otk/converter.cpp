@@ -120,19 +120,20 @@ void Converter::write(fs::path file) {
                 grid->GetPointData()->AddArray(point_array);
             }
 
-            collection->SetPartition(instance_id, frame_number, grid);
+            collection->SetPartition(instance_id, 0, grid);
             instance_id++;
         }
+
+        writer->SetFileName(fmt::format("{}/{}/{}_{}.vtpc", file.parent_path().string(),
+                                        file.stem().string(), file.stem().string(),
+                                        frame_number)
+                                .c_str());
+        writer->SetInputData(collection);
+        writer->Write();
 
         std::cout << fmt::format("done\n");
         std::cout << std::flush;
     }
-
-    fmt::print("Writing collection file\n");
-
-    writer->SetFileName(file.replace_extension(".vtpc").string().c_str());
-    writer->SetInputData(collection);
-    writer->Write();
 }
 
 // ---------------------------------------------------------------------------------------
