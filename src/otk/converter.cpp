@@ -580,6 +580,7 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field,
         }
     } else {
         data_buffer.resize(num_nodes);
+        std::fill(data_buffer.begin(), data_buffer.end(), 0.0);
         std::vector<int> node_counts(data_buffer.size(), 0);
         for (int iblock = 0; iblock < num_blocks; ++iblock) {
             const odb_FieldBulkData& block = blocks[iblock];
@@ -603,7 +604,7 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field,
                 case odb_Enum::odb_PrecisionEnum::DOUBLE_PRECISION: {
                     double* data = block.dataDouble();
                     for (int i = 0; i < num_nodes; ++i) {
-                        data_buffer[labels[i] - 1] = data[i];
+                        data_buffer[labels[i] - 1] += data[i];
                         node_counts[labels[i] - 1]++;
                     }
                     break;
@@ -611,7 +612,7 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field,
                 case odb_Enum::odb_PrecisionEnum::SINGLE_PRECISION: {
                     float* data = block.data();
                     for (int i = 0; i < num_nodes; ++i) {
-                        data_buffer[labels[i] - 1] = data[i];
+                        data_buffer[labels[i] - 1] += data[i];
                         node_counts[labels[i] - 1]++;
                     }
                     break;
