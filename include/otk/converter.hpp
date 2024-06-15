@@ -134,7 +134,7 @@ class Converter {
     //
     // -----------------------------------------------------------------------------------
     void extract_scalar_field(const odb_FieldOutput &field_output,
-                              const odb_Instance &instance, bool composite);
+                              const odb_Instance &instance, int frame, bool composite);
 
     // -----------------------------------------------------------------------------------
     //
@@ -142,7 +142,7 @@ class Converter {
     //
     // -----------------------------------------------------------------------------------
     void extract_vector_field(const odb_FieldOutput &field_output,
-                              const odb_Instance &instance, bool composite);
+                              const odb_Instance &instance, int frame, bool composite);
 
     // -----------------------------------------------------------------------------------
     //
@@ -150,15 +150,15 @@ class Converter {
     //
     // -----------------------------------------------------------------------------------
     void extract_tensor_field(const odb_FieldOutput &field_output,
-                              const odb_Instance &instance, bool composite);
+                              const odb_Instance &instance, int frame, bool composite);
 
    private:
     nlohmann::json output_request_;
     std::vector<odb_FieldOutput> field_outputs_;
     std::unordered_map<std::string, PointArray> points_;
     std::unordered_map<std::string, CellArrayMap> cells_;
-    std::unordered_map<std::string, CellDataArray> cell_data_;
-    std::unordered_map<std::string, PointDataArray> point_data_;
+    std::unordered_map<int, std::unordered_map<std::string, CellDataArray>> cell_data_;
+    std::unordered_map<int, std::unordered_map<std::string, PointDataArray>> point_data_;
 };
 
 // ---------------------------------------------------------------------------------------
