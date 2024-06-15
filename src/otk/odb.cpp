@@ -6,6 +6,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <set>
 #include <vector>
 
 #include <fmt/format.h>
@@ -13,6 +14,8 @@
 #include <odb_API.h>
 #include <odb_MaterialTypes.h>
 #include <odb_SectionTypes.h>
+
+using namespace nlohmann;
 
 namespace otk {
 
@@ -83,6 +86,7 @@ void Odb::instances_info(bool verbose) const {
         fmt::print(".. {}\n", instance_name.CStr());
         this->elements_info(instance_name.CStr(), verbose);
         this->nodes_info(instance_name.CStr(), verbose);
+        this->sections_info(instance_name.CStr(), verbose);
     }
 }
 
@@ -206,6 +210,37 @@ void Odb::elements_info(const std::string &instance, bool verbose) const {
                 fmt::print("{} ", element_connectivity[j]);
             }
             fmt::print("\n");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+//
+//   Sections info print function
+//
+// ---------------------------------------------------------------------------------------
+void Odb::sections_info(const std::string &instance, bool verbose) const {
+    odb_Assembly &root_assembly = odb_->rootAssembly();
+    const odb_Instance &instance_object =
+        root_assembly.instances().constGet(instance.c_str());
+    const odb_SequenceSectionAssignment &section_assignments =
+        instance_object.sectionAssignments();
+    int num_assignments = section_assignments.size();
+    fmt::print(".... Number of section assignments: {}\n", num_assignments);
+
+    if (verbose) {
+        fmt::print("       | {:^11} | {:^11} | {}\n", "Type", "Subtype", "Name");
+
+        for (int iassignment = 0; iassignment < num_assignments; ++iassignment) {
+            const odb_SectionAssignment &assignment = section_assignments[iassignment];
+            const odb_Section &section = assignment.section();
+
+            std::string section_name = section.name().CStr();
+            unsigned int section_type = section.typeIdentifier();
+            unsigned int section_subtype = section.subTypeIdentifier();
+
+            fmt::print("       | {:^11d} | {:^11d} | {}\n", section_type, section_subtype,
+                       section_name);
         }
     }
 }
@@ -340,13 +375,13 @@ void Odb::fields_info(const std::string &step, int frame, bool verbose) const {
 //   JSON summary
 //
 // ---------------------------------------------------------------------------------------
-nlohmann::json Odb::summary() const {
-    nlohmann::json summary;
+json Odb::field_summary() const {
+    json summary;
 
     odb_StepRepositoryIT step_it(odb_->steps());
     for (step_it.first(); !step_it.isDone(); step_it.next()) {
         const odb_Step &step = step_it.currentValue();
-        nlohmann::json step_json;
+        json step_json;
 
         step_json["name"] = std::string{step.name().CStr()};
 
@@ -355,7 +390,7 @@ nlohmann::json Odb::summary() const {
 
         for (int i = 0; i < num_frames; ++i) {
             const odb_Frame &frame = frames[i];
-            nlohmann::json frame_json;
+            json frame_json;
 
             frame_json["id"] = frame.frameId();
             frame_json["increment"] = frame.incrementNumber();
@@ -366,7 +401,7 @@ nlohmann::json Odb::summary() const {
 
             for (field_it.first(); !field_it.isDone(); field_it.next()) {
                 const odb_FieldOutput &field_output = field_it.currentValue();
-                nlohmann::json field_json;
+                json field_json;
 
                 field_json["name"] = std::string{field_output.name().CStr()};
 
@@ -374,7 +409,7 @@ nlohmann::json Odb::summary() const {
                 int num_blocks = blocks.size();
                 for (int j = 0; j < num_blocks; ++j) {
                     const odb_FieldBulkData &block = blocks[j];
-                    nlohmann::json block_json;
+                    json block_json;
 
                     block_json["element_type"] =
                         std::string{block.baseElementType().CStr()};
@@ -489,7 +524,7 @@ nlohmann::json Odb::summary() const {
 
                 for (int j = 0; j < num_locations; ++j) {
                     const odb_FieldLocation &location = locations[j];
-                    nlohmann::json location_json;
+                    json location_json;
 
                     switch (location.position()) {
                         case odb_Enum::odb_ResultPositionEnum::NODAL:
@@ -552,6 +587,81 @@ nlohmann::json Odb::summary() const {
         }
 
         summary["steps"].push_back(step_json);
+    }
+
+    return summary;
+}
+
+// ---------------------------------------------------------------------------------------
+//
+//   Instance summary
+//
+// ---------------------------------------------------------------------------------------
+json Odb::instance_summary() const {
+    json summary;
+
+    odb_Assembly &root_assembly = odb_->rootAssembly();
+    odb_InstanceRepositoryIT instance_iterator(root_assembly.instances());
+
+    for (instance_iterator.first(); !instance_iterator.isDone();
+         instance_iterator.next()) {
+        const std::string instance_name{instance_iterator.currentKey().CStr()};
+        const odb_Instance &instance_object = instance_iterator.currentValue();
+        const odb_SequenceElement &instance_elements = instance_object.elements();
+        int number_elements = instance_elements.size();
+
+        auto get_section_category_name = [](const odb_SectionCategory &section_category) {
+            std::string section_category_raw_name{section_category.name().CStr()};
+            std::string section_category_name;
+
+            if (section_category_raw_name.find("shell < composite >") !=
+                std::string::npos) {
+                section_category_name = "Shell composite";
+            } else if (section_category_raw_name.find("shell") != std::string::npos) {
+                section_category_name = "Shell";
+            } else if (section_category_raw_name.find("solid < composite >") !=
+                       std::string::npos) {
+                section_category_name = "Solid composite";
+            } else if (section_category_raw_name.find("solid") != std::string::npos) {
+                section_category_name = "Solid";
+            } else {
+                section_category_name = "Other";
+            }
+
+            return section_category_name;
+        };
+
+        std::set<std::string> element_types;
+        std::set<std::string> section_categories;
+        for (int i = 0; i < number_elements; ++i) {
+            const odb_Element &element = instance_elements[i];
+            const odb_SectionCategory &section_category = element.sectionCategory();
+
+            std::string element_type = element.type().CStr();
+            std::string section_category_raw_name{section_category.name().CStr()};
+            std::string section_category_name =
+                get_section_category_name(section_category);
+
+            element_types.insert(element_type);
+            section_categories.insert(section_category_name);
+        }
+
+        bool supported = true;
+        bool has_composite_section = false;
+        bool has_non_composite_section = false;
+        for (const auto &section_category : section_categories) {
+            if (section_category.find("composite") != std::string::npos) {
+                has_composite_section = true;
+            } else {
+                has_non_composite_section = true;
+            }
+        }
+        supported = !(has_composite_section && has_non_composite_section);
+
+        summary[instance_name]["element_types"] = element_types;
+        summary[instance_name]["section_categories"] = section_categories;
+        summary[instance_name]["supported"] = supported;
+        summary[instance_name]["composite"] = has_composite_section;
     }
 
     return summary;

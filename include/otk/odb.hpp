@@ -50,7 +50,13 @@ class Odb {
     inline std::string name() const { return path_.filename().string(); }
     inline size_t size() const { return fs::file_size(path_); }
 
-    nlohmann::json summary() const;
+    // -----------------------------------------------------------------------------------
+    //
+    //   JSON summary functions (used by the otk::Converter class)
+    //
+    // -----------------------------------------------------------------------------------
+    nlohmann::json field_summary() const;
+    nlohmann::json instance_summary() const;
 
     // -----------------------------------------------------------------------------------
     //
@@ -76,6 +82,7 @@ class Odb {
     void instances_info(bool verbose = false) const;
     void nodes_info(const std::string &instance, bool verbose = false) const;
     void elements_info(const std::string &instance, bool verbose = false) const;
+    void sections_info(const std::string &instance, bool verbose = false) const;
     void steps_info(bool verbose = false) const;
     void frames_info(const std::string &step, bool verbose = false) const;
     void fields_info(const std::string &step, int frame, bool verbose = false) const;

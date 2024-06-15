@@ -9,7 +9,11 @@
 #include <nlohmann/json.hpp>
 
 #include <vtkCellArray.h>
+#include <vtkCellData.h>
 #include <vtkCellType.h>
+#include <vtkDataArray.h>
+#include <vtkDoubleArray.h>
+#include <vtkPointData.h>
 #include <vtkPoints.h>
 #include <vtkSmartPointer.h>
 #include <vtkUnstructuredGrid.h>
@@ -24,6 +28,10 @@ class Converter {
     using PointArray = vtkSmartPointer<vtkPoints>;
     using CellArray = vtkSmartPointer<vtkCellArray>;
     using CellArrayMap = std::unordered_map<VTKCellType, CellArray>;
+    using CellData = vtkSmartPointer<vtkDoubleArray>;
+    using PointData = vtkSmartPointer<vtkDoubleArray>;
+    using CellDataArray = std::vector<CellData>;
+    using PointDataArray = std::vector<PointData>;
 
    public:
     Converter(const nlohmann::json &output_request) : output_request_(output_request) {}
@@ -82,10 +90,75 @@ class Converter {
                                  const odb_SequenceNode &node_sequence,
                                  odb_Enum::odb_DimensionEnum instance_type);
 
+    // -----------------------------------------------------------------------------------
+    //
+    //   Process summary JSON from Odb class
+    //
+    // -----------------------------------------------------------------------------------
+    nlohmann::json process_field_summary(const nlohmann::json &summary);
+
+    // -----------------------------------------------------------------------------------
+    //
+    //   Match output request to available data
+    //
+    // -----------------------------------------------------------------------------------
+    nlohmann::json match_request_to_available_data(const nlohmann::json &frames,
+                                                   const nlohmann::json &fields);
+
+    // -----------------------------------------------------------------------------------
+    //
+    //   Load field data from Odb class
+    //
+    // -----------------------------------------------------------------------------------
+    nlohmann::json load_field_data(otk::Odb &odb, const nlohmann::json &request);
+
+    // -----------------------------------------------------------------------------------
+    //
+    //   Extract field data from Odb class
+    //
+    // -----------------------------------------------------------------------------------
+    void extract_field_data(otk::Odb &odb, const nlohmann::json &data,
+                            const nlohmann::json &instance_summary);
+
+    // -----------------------------------------------------------------------------------
+    //
+    //   Extract field data from Instance
+    //
+    // -----------------------------------------------------------------------------------
+    void extract_instance_field_data(otk::Odb &odb, const nlohmann::json &data,
+                                     const odb_Instance &instance, bool composite);
+
+    // -----------------------------------------------------------------------------------
+    //
+    //   Extract scalar field data
+    //
+    // -----------------------------------------------------------------------------------
+    void extract_scalar_field(const odb_FieldOutput &field_output,
+                              const odb_Instance &instance, bool composite);
+
+    // -----------------------------------------------------------------------------------
+    //
+    //   Extract vector field data
+    //
+    // -----------------------------------------------------------------------------------
+    void extract_vector_field(const odb_FieldOutput &field_output,
+                              const odb_Instance &instance, bool composite);
+
+    // -----------------------------------------------------------------------------------
+    //
+    //   Extract tensor field data
+    //
+    // -----------------------------------------------------------------------------------
+    void extract_tensor_field(const odb_FieldOutput &field_output,
+                              const odb_Instance &instance, bool composite);
+
    private:
     nlohmann::json output_request_;
+    std::vector<odb_FieldOutput> field_outputs_;
     std::unordered_map<std::string, PointArray> points_;
     std::unordered_map<std::string, CellArrayMap> cells_;
+    std::unordered_map<std::string, CellDataArray> cell_data_;
+    std::unordered_map<std::string, PointDataArray> point_data_;
 };
 
 // ---------------------------------------------------------------------------------------
