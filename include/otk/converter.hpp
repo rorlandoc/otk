@@ -34,8 +34,21 @@ class Converter {
     using PointDataArray = std::vector<PointData>;
 
    public:
+    // -----------------------------------------------------------------------------------
+    //
+    //   Constructor
+    //
+    // -----------------------------------------------------------------------------------
     Converter(const nlohmann::json &output_request) : output_request_(output_request) {}
 
+    // -----------------------------------------------------------------------------------
+    //
+    //   Convert ODB file to VTK format
+    //
+    // -----------------------------------------------------------------------------------
+    void convert(otk::Odb &odb, fs::path file);
+
+   protected:
     // -----------------------------------------------------------------------------------
     //
     //   Convert mesh data to VTK format
@@ -48,16 +61,15 @@ class Converter {
     //   Convert field data to VTK format
     //
     // -----------------------------------------------------------------------------------
-    void convert_fields(otk::Odb &odb);
+    void convert_fields(otk::Odb &odb, fs::path file);
 
     // -----------------------------------------------------------------------------------
     //
     //   Write mesh data to VTU file
     //
     // -----------------------------------------------------------------------------------
-    void write(fs::path file);
+    void write(fs::path file, int frame_id);
 
-   protected:
     // -----------------------------------------------------------------------------------
     //
     //   Get the base element type without derivatives
@@ -110,7 +122,8 @@ class Converter {
     //   Load field data from Odb class
     //
     // -----------------------------------------------------------------------------------
-    nlohmann::json load_field_data(otk::Odb &odb, const nlohmann::json &request);
+    nlohmann::json load_field_data(otk::Odb &odb, const nlohmann::json &request,
+                                   const std::string &step_name, int frame_id);
 
     // -----------------------------------------------------------------------------------
     //
@@ -118,7 +131,8 @@ class Converter {
     //
     // -----------------------------------------------------------------------------------
     void extract_field_data(otk::Odb &odb, const nlohmann::json &data,
-                            const nlohmann::json &instance_summary);
+                            const nlohmann::json &instance_summary,
+                            const std::string &step_name, int frame_id);
 
     // -----------------------------------------------------------------------------------
     //
@@ -126,7 +140,8 @@ class Converter {
     //
     // -----------------------------------------------------------------------------------
     void extract_instance_field_data(otk::Odb &odb, const nlohmann::json &data,
-                                     const odb_Instance &instance, bool composite);
+                                     const odb_Instance &instance, bool composite,
+                                     const std::string &step_name, int frame_id);
 
     // -----------------------------------------------------------------------------------
     //
@@ -134,7 +149,7 @@ class Converter {
     //
     // -----------------------------------------------------------------------------------
     void extract_scalar_field(const odb_FieldOutput &field_output,
-                              const odb_Instance &instance, int frame, bool composite);
+                              const odb_Instance &instance, bool composite);
 
     // -----------------------------------------------------------------------------------
     //
@@ -142,7 +157,7 @@ class Converter {
     //
     // -----------------------------------------------------------------------------------
     void extract_vector_field(const odb_FieldOutput &field_output,
-                              const odb_Instance &instance, int frame, bool composite);
+                              const odb_Instance &instance, bool composite);
 
     // -----------------------------------------------------------------------------------
     //
@@ -150,15 +165,15 @@ class Converter {
     //
     // -----------------------------------------------------------------------------------
     void extract_tensor_field(const odb_FieldOutput &field_output,
-                              const odb_Instance &instance, int frame, bool composite);
+                              const odb_Instance &instance, bool composite);
 
    private:
     nlohmann::json output_request_;
     std::vector<odb_FieldOutput> field_outputs_;
     std::unordered_map<std::string, PointArray> points_;
     std::unordered_map<std::string, CellArrayMap> cells_;
-    std::unordered_map<int, std::unordered_map<std::string, CellDataArray>> cell_data_;
-    std::unordered_map<int, std::unordered_map<std::string, PointDataArray>> point_data_;
+    std::unordered_map<std::string, CellDataArray> cell_data_;
+    std::unordered_map<std::string, PointDataArray> point_data_;
 };
 
 // ---------------------------------------------------------------------------------------

@@ -55,7 +55,7 @@ class Odb {
     //   JSON summary functions (used by the otk::Converter class)
     //
     // -----------------------------------------------------------------------------------
-    nlohmann::json field_summary() const;
+    nlohmann::json field_summary(const nlohmann::json &frames) const;
     nlohmann::json instance_summary() const;
 
     // -----------------------------------------------------------------------------------

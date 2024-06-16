@@ -20,6 +20,16 @@ namespace otk {
 
 // ---------------------------------------------------------------------------------------
 //
+//   Convert ODB file to VTK format
+//
+// ---------------------------------------------------------------------------------------
+void Converter::convert(otk::Odb& odb, fs::path file) {
+    convert_mesh(odb);
+    convert_fields(odb, file);
+}
+
+// ---------------------------------------------------------------------------------------
+//
 //   Convert mesh data to VTK format
 //
 // ---------------------------------------------------------------------------------------
@@ -33,7 +43,7 @@ void Converter::convert_mesh(otk::Odb& odb) {
         odb_Enum::odb_DimensionEnum instance_type = instance.embeddedSpace();
         std::string instance_name{instance.name().cStr()};
 
-        std::cout << fmt::format("Converting mesh data for instance {} ... ",
+        std::cout << fmt::format("Converting mesh data for instance {}...  ",
                                  instance_name);
         std::cout << std::flush;
 
@@ -60,32 +70,38 @@ void Converter::convert_mesh(otk::Odb& odb) {
 //   Convert field data to VTK format
 //
 // ---------------------------------------------------------------------------------------
-void Converter::convert_fields(otk::Odb& odb) {
+void Converter::convert_fields(otk::Odb& odb, fs::path file) {
     std::cout << fmt::format("Started field data conversion.\n");
     std::cout << std::flush;
 
-    const odb_Assembly& root_assembly = odb.handle()->rootAssembly();
-    odb_InstanceRepositoryIT instance_iterator(root_assembly.instances());
-
     using namespace nlohmann;
 
-    std::cout << fmt::format("Getting info on the ODB ... ");
-    std::cout << std::flush;
-
-    json field_summary = odb.field_summary();
+    json field_summary = odb.field_summary(output_request_["frames"]);
     json instance_summary = odb.instance_summary();
-
-    std::cout << fmt::format("done\n");
-    std::cout << std::flush;
 
     json output_summary = process_field_summary(field_summary);
     json matches = match_request_to_available_data(output_summary["available_frames"],
                                                    output_summary["available_fields"]);
-    json field_data = load_field_data(odb, matches);
 
-    extract_field_data(odb, field_data, instance_summary);
+    for (auto& [step, step_data] : matches.items()) {
+        for (auto& frame_data : step_data["frames"]) {
+            int frame_id = frame_data.get<int>();
 
-    std::cout << fmt::format("Complete field data conversion.\n");
+            cell_data_.clear();
+            point_data_.clear();
+            field_outputs_.clear();
+
+            std::cout << fmt::format("Converting field data for {} frame {}:\n", step,
+                                     frame_id);
+            std::cout << std::flush;
+
+            json field_data = load_field_data(odb, matches, step, frame_id);
+            extract_field_data(odb, field_data, instance_summary, step, frame_id);
+            write(file, frame_id);
+        }
+    }
+
+    std::cout << fmt::format("Completed field data conversion.\n");
     std::cout << std::flush;
 }
 
@@ -94,46 +110,42 @@ void Converter::convert_fields(otk::Odb& odb) {
 //   Write mesh data to VTU file
 //
 // ---------------------------------------------------------------------------------------
-void Converter::write(fs::path file) {
+void Converter::write(fs::path file, int frame_id) {
     auto writer = vtkSmartPointer<vtkXMLPartitionedDataSetCollectionWriter>::New();
     auto collection = vtkSmartPointer<vtkPartitionedDataSetCollection>::New();
 
     std::vector<std::string> instance_names = extract_keys(points_);
-    std::vector<int> frame_numbers = extract_keys(cell_data_);
 
-    for (auto& frame_number : frame_numbers) {
-        int instance_id = 0;
+    int instance_id = 0;
 
-        std::cout << fmt::format("Writing frame {} ... ", frame_number);
-        std::cout << std::flush;
+    std::cout << fmt::format("    - Writing frame...  ", frame_id);
+    std::cout << std::flush;
 
-        for (auto& instance_name : instance_names) {
-            auto grid = vtkSmartPointer<vtkUnstructuredGrid>::New();
-            grid->SetPoints(points_[instance_name]);
-            for (auto& [cell_type, cell_array] : cells_[instance_name]) {
-                grid->SetCells(cell_type, cell_array);
-            }
-            for (auto& cell_array : cell_data_[frame_number][instance_name]) {
-                grid->GetCellData()->AddArray(cell_array);
-            }
-            for (auto& point_array : point_data_[frame_number][instance_name]) {
-                grid->GetPointData()->AddArray(point_array);
-            }
-
-            collection->SetPartition(instance_id, 0, grid);
-            instance_id++;
+    for (auto& instance_name : instance_names) {
+        auto grid = vtkSmartPointer<vtkUnstructuredGrid>::New();
+        grid->SetPoints(points_[instance_name]);
+        for (auto& [cell_type, cell_array] : cells_[instance_name]) {
+            grid->SetCells(cell_type, cell_array);
+        }
+        for (auto& cell_array : cell_data_[instance_name]) {
+            grid->GetCellData()->AddArray(cell_array);
+        }
+        for (auto& point_array : point_data_[instance_name]) {
+            grid->GetPointData()->AddArray(point_array);
         }
 
-        writer->SetFileName(fmt::format("{}/{}/{}_{}.vtpc", file.parent_path().string(),
-                                        file.stem().string(), file.stem().string(),
-                                        frame_number)
-                                .c_str());
-        writer->SetInputData(collection);
-        writer->Write();
-
-        std::cout << fmt::format("done\n");
-        std::cout << std::flush;
+        collection->SetPartition(instance_id, 0, grid);
+        instance_id++;
     }
+
+    writer->SetFileName(fmt::format("{}/{}/{}_{}.vtpc", file.parent_path().string(),
+                                    file.stem().string(), file.stem().string(), frame_id)
+                            .c_str());
+    writer->SetInputData(collection);
+    writer->Write();
+
+    std::cout << fmt::format("done\n");
+    std::cout << std::flush;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -257,13 +269,13 @@ json Converter::process_field_summary(const json& summary) {
     json frame_numbers;
     json field_names;
 
-    std::cout << fmt::format("Processing ODB field summary ... ");
+    std::cout << fmt::format("Processing ODB field summary...  ");
     std::cout << std::flush;
 
     for (const auto& step : summary["steps"]) {
         auto step_name = step["name"].template get<std::string>();
         for (const auto& frame : step["frames"]) {
-            auto frame_number = frame["increment"].template get<int>();
+            auto frame_number = frame["id"].template get<int>();
             frame_numbers[step_name].push_back(frame_number);
             for (const auto& field : frame["fields"]) {
                 auto field_name = field["name"].template get<std::string>();
@@ -289,7 +301,7 @@ json Converter::process_field_summary(const json& summary) {
 json Converter::match_request_to_available_data(const json& frames, const json& fields) {
     json matches;
 
-    std::cout << fmt::format("Matching output request to available data ... ");
+    std::cout << fmt::format("Matching output request to available data...  ");
     std::cout << std::flush;
 
     // Get all the field names
@@ -344,36 +356,36 @@ json Converter::match_request_to_available_data(const json& frames, const json& 
 //   Load field data from Odb class
 //
 // ---------------------------------------------------------------------------------------
-json Converter::load_field_data(otk::Odb& odb, const json& request) {
+json Converter::load_field_data(otk::Odb& odb, const json& request,
+                                const std::string& step_name, int frame_id) {
     json data;
 
-    std::cout << fmt::format("Loading field data ... ");
+    std::cout << fmt::format("    - Loading field data...  ");
     std::cout << std::flush;
 
-    for (const auto& [step, request_info] : request.items()) {
-        json step_data;
+    json frame_data;
 
-        const odb_Step& step_obj = odb.handle()->steps().constGet(step.c_str());
+    const odb_Step& step_obj = odb.handle()->steps().constGet(step_name.c_str());
 
-        const auto& fields_request = request_info["fields"];
-        for (const auto& field_info : fields_request) {
-            int frame = field_info["frame"].get<int>();
-            auto fields = field_info["fields"].get<std::vector<std::string>>();
-            json frame_data;
-            frame_data["frame"] = frame;
-
-            const odb_Frame& frame_obj = step_obj.frames().constGet(frame);
-            const odb_FieldOutputRepository& fields_repo = frame_obj.fieldOutputs();
-
-            for (const auto& field : fields) {
-                field_outputs_.push_back(fields_repo.constGet(field.c_str()));
-                frame_data["fields"][field] = field_outputs_.size() - 1;
-            }
-
-            step_data.push_back(frame_data);
+    const auto& fields_request = request[step_name]["fields"];
+    for (const auto& field_info : fields_request) {
+        int frame = field_info["frame"].get<int>();
+        if (frame != frame_id) {
+            continue;
         }
-        data[step] = step_data;
+
+        auto fields = field_info["fields"].get<std::vector<std::string>>();
+        frame_data["frame"] = frame;
+
+        const odb_Frame& frame_obj = step_obj.frames().constGet(frame);
+        const odb_FieldOutputRepository& fields_repo = frame_obj.fieldOutputs();
+
+        for (const auto& field : fields) {
+            field_outputs_.push_back(std::move(fields_repo.constGet(field.c_str())));
+            frame_data["fields"][field] = field_outputs_.size() - 1;
+        }
     }
+    data[step_name] = frame_data;
 
     std::cout << fmt::format("done\n");
     std::cout << std::flush;
@@ -387,7 +399,8 @@ json Converter::load_field_data(otk::Odb& odb, const json& request) {
 //
 // ---------------------------------------------------------------------------------------
 void Converter::extract_field_data(otk::Odb& odb, const json& data,
-                                   const json& instance_summary) {
+                                   const json& instance_summary,
+                                   const std::string& step_name, int frame_id) {
     odb_Assembly& root_assembly = odb.handle()->rootAssembly();
     odb_InstanceRepositoryIT it(root_assembly.instances());
 
@@ -406,7 +419,8 @@ void Converter::extract_field_data(otk::Odb& odb, const json& data,
         }
 
         bool composite = instance_summary[instance_name]["composite"].get<bool>();
-        extract_instance_field_data(odb, data, it.currentValue(), composite);
+        extract_instance_field_data(odb, data, it.currentValue(), composite, step_name,
+                                    frame_id);
     }
 }
 
@@ -416,49 +430,46 @@ void Converter::extract_field_data(otk::Odb& odb, const json& data,
 //
 // ---------------------------------------------------------------------------------------
 void Converter::extract_instance_field_data(otk::Odb& odb, const json& data,
-                                            const odb_Instance& instance,
-                                            bool composite) {
-    for (auto& [step, step_data] : data.items()) {
-        for (auto& frame_data : step_data) {
-            int frame_id = frame_data["frame"].get<int>();
+                                            const odb_Instance& instance, bool composite,
+                                            const std::string& step_name, int frame_id) {
+    std::cout << fmt::format("    - Processing instance {}... ", instance.name().cStr());
+    std::cout << std::flush;
 
-            std::cout << fmt::format("Processing instance {} [{} frame {}] ... ",
-                                     instance.name().cStr(), step, frame_id);
-            std::cout << std::flush;
-
-            for (auto& [field, field_data] : frame_data["fields"].items()) {
-                int field_id = field_data.get<int>();
-                const odb_FieldOutput& field_output = field_outputs_[field_id];
-                const odb_FieldOutput& instance_field = field_output.getSubset(instance);
-                const odb_Enum::odb_DataTypeEnum data_type = instance_field.type();
-
-                const bool is_scalar = (data_type == odb_Enum::SCALAR);
-                const bool is_vector = (data_type == odb_Enum::VECTOR);
-                const bool is_tensor = (data_type == odb_Enum::TENSOR_3D_FULL ||
-                                        data_type == odb_Enum::TENSOR_3D_PLANAR ||
-                                        data_type == odb_Enum::TENSOR_2D_PLANAR);
-
-                if (!(is_scalar || is_vector || is_tensor)) {
-                    fmt::print("Field {} has unsupported data type ({}).\n", field,
-                               static_cast<int>(data_type));
-                    continue;
-                }
-
-                if (is_scalar) {
-                    extract_scalar_field(instance_field, instance, frame_id, composite);
-                    continue;
-                }
-                if (is_vector) {
-                    extract_vector_field(instance_field, instance, frame_id, composite);
-                    continue;
-                }
-                extract_tensor_field(instance_field, instance, frame_id, composite);
-            }
-
-            std::cout << fmt::format("done\n");
-            std::cout << std::flush;
+    for (auto& [field, field_data] : data[step_name]["fields"].items()) {
+        int field_id = field_data.get<int>();
+        const odb_FieldOutput& field_output = field_outputs_[field_id];
+        const odb_FieldOutput& instance_field = field_output.getSubset(instance);
+        if (instance_field.locations().size() == 0) {
+            continue;
         }
+
+        const odb_Enum::odb_DataTypeEnum data_type = instance_field.type();
+
+        const bool is_scalar = (data_type == odb_Enum::SCALAR);
+        const bool is_vector = (data_type == odb_Enum::VECTOR);
+        const bool is_tensor = (data_type == odb_Enum::TENSOR_3D_FULL ||
+                                data_type == odb_Enum::TENSOR_3D_PLANAR ||
+                                data_type == odb_Enum::TENSOR_2D_PLANAR);
+
+        if (!(is_scalar || is_vector || is_tensor)) {
+            fmt::print("Field {} has unsupported data type ({}).\n", field,
+                       static_cast<int>(data_type));
+            continue;
+        }
+
+        if (is_scalar) {
+            extract_scalar_field(instance_field, instance, composite);
+            continue;
+        }
+        if (is_vector) {
+            extract_vector_field(instance_field, instance, composite);
+            continue;
+        }
+        extract_tensor_field(instance_field, instance, composite);
     }
+
+    std::cout << fmt::format("done\n");
+    std::cout << std::flush;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -467,8 +478,7 @@ void Converter::extract_instance_field_data(otk::Odb& odb, const json& data,
 //
 // ---------------------------------------------------------------------------------------
 void Converter::extract_scalar_field(const odb_FieldOutput& field,
-                                     const odb_Instance& instance, int frame,
-                                     bool composite) {
+                                     const odb_Instance& instance, bool composite) {
     const odb_SequenceFieldLocation& locations = field.locations();
     const odb_SequenceString& element_types = field.baseElementTypes();
     const odb_SequenceElement& elements = instance.elements();
@@ -571,9 +581,8 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field,
                 }
             }
         }
-        cell_data_[frame][instance_name].push_back(
-            vtkSmartPointer<vtkDoubleArray>::New());
-        auto& array = cell_data_[frame][instance_name].back();
+        cell_data_[instance_name].push_back(vtkSmartPointer<vtkDoubleArray>::New());
+        auto& array = cell_data_[instance_name].back();
         array->SetName(field_name.c_str());
         array->SetNumberOfComponents(1);
         for (const auto& value : data_buffer) {
@@ -625,16 +634,14 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field,
                 data_buffer[i] /= node_counts[i];
             }
         }
-        point_data_[frame][instance_name].push_back(
-            vtkSmartPointer<vtkDoubleArray>::New());
-        auto& array = point_data_[frame][instance_name].back();
+        point_data_[instance_name].push_back(vtkSmartPointer<vtkDoubleArray>::New());
+        auto& array = point_data_[instance_name].back();
         array->SetName(field_name.c_str());
         array->SetNumberOfComponents(1);
         for (const auto& value : data_buffer) {
             array->InsertNextValue(value);
         }
     }
-    return;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -643,8 +650,7 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field,
 //
 // ---------------------------------------------------------------------------------------
 void Converter::extract_vector_field(const odb_FieldOutput& field_output,
-                                     const odb_Instance& instance, int frame,
-                                     bool composite) {}
+                                     const odb_Instance& instance, bool composite) {}
 
 // ---------------------------------------------------------------------------------------
 //
@@ -652,7 +658,6 @@ void Converter::extract_vector_field(const odb_FieldOutput& field_output,
 //
 // ---------------------------------------------------------------------------------------
 void Converter::extract_tensor_field(const odb_FieldOutput& field_output,
-                                     const odb_Instance& instance, int frame,
-                                     bool composite) {}
+                                     const odb_Instance& instance, bool composite) {}
 
 }  // namespace otk
