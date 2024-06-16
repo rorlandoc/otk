@@ -432,6 +432,41 @@ void Converter::extract_field_data(otk::Odb& odb, const json& data,
 void Converter::extract_instance_field_data(otk::Odb& odb, const json& data,
                                             odb_Instance& instance, bool composite,
                                             const std::string& step_name, int frame_id) {
+    std::cout << fmt::format("    - Filtering {} elements and sections... ",
+                             instance.name().cStr());
+    std::cout << std::flush;
+
+    std::unordered_map<std::string, odb_SequenceElement> section_elements;
+    const odb_SequenceElement elements = instance.elements();
+    int num_elements = elements.size();
+    for (int ielement = 0; ielement < num_elements; ++ielement) {
+        const odb_Element element = elements[ielement];
+        std::string name{element.sectionCategory().name().CStr()};
+        std::string type{element.type().CStr()};
+        std::string key = fmt::format("{} {}", name, type);
+        if (section_elements.contains(key) == false) {
+            odb_SequenceElement temp(instance);
+            temp.append(element);
+            section_elements[key] = temp;
+        } else {
+            section_elements[key].append(element);
+        }
+    }
+    std::vector<odb_Set> element_sets;
+    for (const auto& [key, elements] : section_elements) {
+        const odb_String set_name{key.c_str()};
+        odb_Set set;
+        if (instance.elementSets().isMember(set_name) == false) {
+            set = instance.ElementSet(set_name, elements);
+        } else {
+            set = instance.elementSets().get(set_name);
+        }
+        element_sets.push_back(set);
+    }
+
+    std::cout << fmt::format("done\n");
+    std::cout << std::flush;
+
     std::cout << fmt::format("    - Processing {}... ", instance.name().cStr());
     std::cout << std::flush;
 
@@ -457,14 +492,14 @@ void Converter::extract_instance_field_data(otk::Odb& odb, const json& data,
         }
 
         if (is_scalar) {
-            extract_scalar_field(instance_field, instance, composite);
+            extract_scalar_field(instance_field, element_sets, instance, composite);
             continue;
         }
         if (is_vector) {
-            extract_vector_field(instance_field, instance, composite);
+            extract_vector_field(instance_field, element_sets, instance, composite);
             continue;
         }
-        extract_tensor_field(instance_field, instance, composite);
+        extract_tensor_field(instance_field, element_sets, instance, composite);
     }
 
     std::cout << fmt::format("done\n");
@@ -476,8 +511,9 @@ void Converter::extract_instance_field_data(otk::Odb& odb, const json& data,
 //   Extract scalar field data
 //
 // ---------------------------------------------------------------------------------------
-void Converter::extract_scalar_field(const odb_FieldOutput& field, odb_Instance& instance,
-                                     bool composite) {
+void Converter::extract_scalar_field(const odb_FieldOutput& field,
+                                     const std::vector<odb_Set>& element_sets,
+                                     const odb_Instance& instance, bool composite) {
     std::string field_name{field.name().cStr()};
     std::string instance_name{instance.name().cStr()};
 
@@ -485,40 +521,15 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field, odb_Instance&
     int num_instance_nodes = instance.nodes().size();
     int num_section_assignments = instance.sectionAssignments().size();
 
-    // Filter elements by section category and type
-    std::unordered_map<std::string, odb_SequenceElement> section_elements;
-    const odb_SequenceElement elements = instance.elements();
-    int num_elements = elements.size();
-    for (int ielement = 0; ielement < num_elements; ++ielement) {
-        const odb_Element element = elements[ielement];
-        std::string name{element.sectionCategory().name().CStr()};
-        std::string type{element.type().CStr()};
-        std::string key = fmt::format("{} {}", name, type);
-        if (section_elements.contains(key) == false) {
-            odb_SequenceElement temp(instance);
-            temp.append(element);
-            section_elements[key] = temp;
-        } else {
-            section_elements[key].append(element);
-        }
-    }
-
     std::vector<double> data_buffer(std::max(num_instance_elements, num_instance_nodes),
                                     0.0);
-    std::vector<int> node_counts(data_buffer.size(), 0);
+    std::vector<int> node_counts(num_instance_nodes, 0);
     bool use_point_data = false;
     bool use_cell_data = false;
     bool requires_extrapolation = false;  // Interpolation to nodes
     bool may_require_reduction = false;   // Reduction across section points
 
-    for (const auto& [key, elements] : section_elements) {
-        const odb_String set_name{key.c_str()};
-        odb_Set set;
-        if (instance.elementSets().isMember(set_name) == false) {
-            set = instance.ElementSet(set_name, elements);
-        } else {
-            set = instance.elementSets().get(set_name);
-        }
+    for (const auto& set : element_sets) {
         odb_FieldOutput localized_field = field.getSubset(set);
 
         const odb_SequenceFieldLocation locations = localized_field.locations();
@@ -579,10 +590,8 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field, odb_Instance&
             use_cell_data = true;
             for (int iblock = 0; iblock < num_blocks; ++iblock) {
                 const odb_FieldBulkData& block = blocks[iblock];
-                int* elements = block.elementLabels();
                 int num_elements = block.numberOfElements();
                 int* labels = block.elementLabels();
-                int length = block.length();
 
                 if (block.width() != 1) {
                     fmt::print("Unsupported field width for {} {} (block {}, {}).\n",
@@ -612,19 +621,12 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field, odb_Instance&
             use_point_data = true;
             for (int iblock = 0; iblock < num_blocks; ++iblock) {
                 const odb_FieldBulkData& block = blocks[iblock];
-                int* nodes = block.nodeLabels();
                 int num_nodes = block.numberOfNodes();
                 int* labels = block.nodeLabels();
-                int length = block.length();
 
                 if (block.width() != 1) {
                     fmt::print("Unsupported field width for {} {} (block {}, {}).\n",
                                field_name, instance_name, iblock, block.width());
-                    return;
-                }
-                if (length != num_nodes) {
-                    fmt::print("Inconsistent block length for {} {} (block {}, {}).\n",
-                               field_name, instance_name, iblock, length);
                     return;
                 }
 
@@ -682,7 +684,8 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field, odb_Instance&
 //
 // ---------------------------------------------------------------------------------------
 void Converter::extract_vector_field(const odb_FieldOutput& field_output,
-                                     odb_Instance& instance, bool composite) {}
+                                     const std::vector<odb_Set>& element_sets,
+                                     const odb_Instance& instance, bool composite) {}
 
 // ---------------------------------------------------------------------------------------
 //
@@ -690,6 +693,7 @@ void Converter::extract_vector_field(const odb_FieldOutput& field_output,
 //
 // ---------------------------------------------------------------------------------------
 void Converter::extract_tensor_field(const odb_FieldOutput& field_output,
-                                     odb_Instance& instance, bool composite) {}
+                                     const std::vector<odb_Set>& element_sets,
+                                     const odb_Instance& instance, bool composite) {}
 
 }  // namespace otk
