@@ -43,8 +43,7 @@ void Converter::convert_mesh(otk::Odb& odb) {
         odb_Enum::odb_DimensionEnum instance_type = instance.embeddedSpace();
         std::string instance_name{instance.name().cStr()};
 
-        std::cout << fmt::format("Converting mesh data for instance {}...  ",
-                                 instance_name);
+        std::cout << fmt::format("Converting mesh data for {}...  ", instance_name);
         std::cout << std::flush;
 
         const odb_SequenceNode& instance_nodes = instance.nodes();
@@ -419,8 +418,9 @@ void Converter::extract_field_data(otk::Odb& odb, const json& data,
         }
 
         bool composite = instance_summary[instance_name]["composite"].get<bool>();
-        extract_instance_field_data(odb, data, it.currentValue(), composite, step_name,
-                                    frame_id);
+        extract_instance_field_data(odb, data,
+                                    root_assembly.instances().get(it.currentKey()),
+                                    composite, step_name, frame_id);
     }
 }
 
@@ -430,9 +430,9 @@ void Converter::extract_field_data(otk::Odb& odb, const json& data,
 //
 // ---------------------------------------------------------------------------------------
 void Converter::extract_instance_field_data(otk::Odb& odb, const json& data,
-                                            const odb_Instance& instance, bool composite,
+                                            odb_Instance& instance, bool composite,
                                             const std::string& step_name, int frame_id) {
-    std::cout << fmt::format("    - Processing instance {}... ", instance.name().cStr());
+    std::cout << fmt::format("    - Processing {}... ", instance.name().cStr());
     std::cout << std::flush;
 
     for (auto& [field, field_data] : data[step_name]["fields"].items()) {
@@ -444,7 +444,6 @@ void Converter::extract_instance_field_data(otk::Odb& odb, const json& data,
         }
 
         const odb_Enum::odb_DataTypeEnum data_type = instance_field.type();
-
         const bool is_scalar = (data_type == odb_Enum::SCALAR);
         const bool is_vector = (data_type == odb_Enum::VECTOR);
         const bool is_tensor = (data_type == odb_Enum::TENSOR_3D_FULL ||
@@ -477,110 +476,182 @@ void Converter::extract_instance_field_data(otk::Odb& odb, const json& data,
 //   Extract scalar field data
 //
 // ---------------------------------------------------------------------------------------
-void Converter::extract_scalar_field(const odb_FieldOutput& field,
-                                     const odb_Instance& instance, bool composite) {
-    const odb_SequenceFieldLocation& locations = field.locations();
-    const odb_SequenceString& element_types = field.baseElementTypes();
-    const odb_SequenceElement& elements = instance.elements();
-    const odb_SequenceNode& nodes = instance.nodes();
-
+void Converter::extract_scalar_field(const odb_FieldOutput& field, odb_Instance& instance,
+                                     bool composite) {
     std::string field_name{field.name().cStr()};
     std::string instance_name{instance.name().cStr()};
+
+    int num_instance_elements = instance.elements().size();
+    int num_instance_nodes = instance.nodes().size();
+    int num_section_assignments = instance.sectionAssignments().size();
+
+    // Filter elements by section category and type
+    std::unordered_map<std::string, odb_SequenceElement> section_elements;
+    const odb_SequenceElement elements = instance.elements();
     int num_elements = elements.size();
-    int num_nodes = nodes.size();
-
-    int num_locations = locations.size();
-    int num_types = element_types.size();
-
-    if (num_locations == 0) {
-        fmt::print("Field {} {} has no output locations.\n", field_name, instance_name);
-        return;
+    for (int ielement = 0; ielement < num_elements; ++ielement) {
+        const odb_Element element = elements[ielement];
+        std::string name{element.sectionCategory().name().CStr()};
+        std::string type{element.type().CStr()};
+        std::string key = fmt::format("{} {}", name, type);
+        if (section_elements.contains(key) == false) {
+            odb_SequenceElement temp(instance);
+            temp.append(element);
+            section_elements[key] = temp;
+        } else {
+            section_elements[key].append(element);
+        }
     }
 
-    int location_index = 0;               // Default to first location
+    std::vector<double> data_buffer(std::max(num_instance_elements, num_instance_nodes),
+                                    0.0);
+    std::vector<int> node_counts(data_buffer.size(), 0);
+    bool use_point_data = false;
+    bool use_cell_data = false;
     bool requires_extrapolation = false;  // Interpolation to nodes
     bool may_require_reduction = false;   // Reduction across section points
 
-    for (int ilocation = 0; ilocation < num_locations; ++ilocation) {
-        switch (locations[ilocation].position()) {
-            case odb_Enum::odb_ResultPositionEnum::WHOLE_ELEMENT:
-                location_index = ilocation;
-                break;
-            case odb_Enum::odb_ResultPositionEnum::NODAL:
-                location_index = ilocation;
-                break;
-            case odb_Enum::odb_ResultPositionEnum::INTEGRATION_POINT:
-                location_index = ilocation;
-                requires_extrapolation = true;
-                may_require_reduction = true;
-                break;
-            default:
-                fmt::print("Unsupported field output position for {} {} ({}).\n",
-                           field_name, instance_name,
-                           static_cast<int>(locations[ilocation].position()));
-                return;
+    for (const auto& [key, elements] : section_elements) {
+        const odb_String set_name{key.c_str()};
+        odb_Set set;
+        if (instance.elementSets().isMember(set_name) == false) {
+            set = instance.ElementSet(set_name, elements);
+        } else {
+            set = instance.elementSets().get(set_name);
         }
-    }
+        odb_FieldOutput localized_field = field.getSubset(set);
 
-    const odb_FieldLocation& location = locations[location_index];
-    odb_FieldOutput localized_field = field.getSubset(location);
-    const odb_SequenceSectionPoint& section_pts = location.sectionPoint();
-    int num_section_pts = section_pts.size();
-
-    if (requires_extrapolation) {
-        localized_field =
-            localized_field.getSubset(odb_Enum::odb_ResultPositionEnum::ELEMENT_NODAL);
-    }
-    if (composite && may_require_reduction) {
-        odb_SequenceFieldOutput composite_fields(num_section_pts);
-        for (int i = 0; i < num_section_pts; ++i) {
-            composite_fields.insert(i, abs(localized_field.getSubset(section_pts[i])));
+        const odb_SequenceFieldLocation locations = localized_field.locations();
+        int num_locations = locations.size();
+        if (num_locations == 0) {
+            continue;
         }
-        composite_fields = maxEnvelope(composite_fields);
-        localized_field = composite_fields[0];
-    }
 
-    const odb_SequenceFieldBulkData& blocks = localized_field.bulkDataBlocks();
-    int num_blocks = blocks.size();
-
-    std::vector<double> data_buffer;
-    if (location.position() == odb_Enum::odb_ResultPositionEnum::WHOLE_ELEMENT) {
-        data_buffer.resize(num_elements);
-        for (int iblock = 0; iblock < num_blocks; ++iblock) {
-            const odb_FieldBulkData& block = blocks[iblock];
-            int* elements = block.elementLabels();
-            int num_elements = block.numberOfElements();
-            int* labels = block.elementLabels();
-            int length = block.length();
-
-            if (block.width() != 1) {
-                fmt::print("Unsupported field width for {} {} (block {}, {}).\n",
-                           field_name, instance_name, iblock, block.width());
-                return;
-            }
-            if (length != num_elements) {
-                fmt::print("Inconsistent block length for {} {} (block {}, {}).\n",
-                           field_name, instance_name, iblock, length);
-                return;
-            }
-
-            switch (block.precision()) {
-                case odb_Enum::odb_PrecisionEnum::DOUBLE_PRECISION: {
-                    double* data = block.dataDouble();
-                    for (int i = 0; i < num_elements; ++i) {
-                        data_buffer[labels[i] - 1] = data[i];
-                    }
+        int location_index = 0;
+        for (int ilocation = 0; ilocation < num_locations; ++ilocation) {
+            switch (locations[ilocation].position()) {
+                case odb_Enum::odb_ResultPositionEnum::WHOLE_ELEMENT:
+                    location_index = ilocation;
                     break;
-                }
-                case odb_Enum::odb_PrecisionEnum::SINGLE_PRECISION: {
-                    float* data = block.data();
-                    for (int i = 0; i < num_elements; ++i) {
-                        data_buffer[labels[i] - 1] = data[i];
-                    }
+                case odb_Enum::odb_ResultPositionEnum::NODAL:
+                    location_index = ilocation;
                     break;
+                case odb_Enum::odb_ResultPositionEnum::INTEGRATION_POINT:
+                    location_index = ilocation;
+                    requires_extrapolation = true;
+                    may_require_reduction = true;
+                    break;
+                default:
+                    fmt::print("Unsupported field output position for {} {} ({}).\n",
+                               field_name, instance_name,
+                               static_cast<int>(locations[ilocation].position()));
+                    return;
+            }
+        }
+        const odb_FieldLocation location = locations[location_index];
+        localized_field = localized_field.getSubset(location);
+
+        const odb_SequenceSectionPoint section_pts =
+            localized_field.locations()[0].sectionPoint();
+        int num_section_pts = section_pts.size();
+
+        if (requires_extrapolation) {
+            localized_field = localized_field.getSubset(
+                odb_Enum::odb_ResultPositionEnum::ELEMENT_NODAL);
+        }
+        if (composite && may_require_reduction) {
+            odb_SequenceFieldOutput composite_fields(num_section_pts);
+            for (int i = 0; i < num_section_pts; ++i) {
+                const odb_SectionPoint section_pt = section_pts.constGet(i);
+                odb_FieldOutput temp_field = localized_field.getSubset(section_pt);
+                temp_field = abs(temp_field);
+                composite_fields.append(temp_field);
+            }
+            composite_fields.append(localized_field);
+            composite_fields = maxEnvelope(composite_fields);
+            localized_field = composite_fields[0];
+        }
+
+        const odb_SequenceFieldBulkData& blocks = localized_field.bulkDataBlocks();
+        int num_blocks = blocks.size();
+
+        if (location.position() == odb_Enum::odb_ResultPositionEnum::WHOLE_ELEMENT) {
+            use_cell_data = true;
+            for (int iblock = 0; iblock < num_blocks; ++iblock) {
+                const odb_FieldBulkData& block = blocks[iblock];
+                int* elements = block.elementLabels();
+                int num_elements = block.numberOfElements();
+                int* labels = block.elementLabels();
+                int length = block.length();
+
+                if (block.width() != 1) {
+                    fmt::print("Unsupported field width for {} {} (block {}, {}).\n",
+                               field_name, instance_name, iblock, block.width());
+                    return;
+                }
+
+                switch (block.precision()) {
+                    case odb_Enum::odb_PrecisionEnum::DOUBLE_PRECISION: {
+                        double* data = block.dataDouble();
+                        for (int i = 0; i < num_elements; ++i) {
+                            data_buffer[labels[i] - 1] = data[i];
+                        }
+                        break;
+                    }
+                    case odb_Enum::odb_PrecisionEnum::SINGLE_PRECISION: {
+                        float* data = block.data();
+                        for (int i = 0; i < num_elements; ++i) {
+                            data_buffer[labels[i] - 1] = data[i];
+                        }
+                        break;
+                    }
+                }
+            }
+
+        } else {
+            use_point_data = true;
+            for (int iblock = 0; iblock < num_blocks; ++iblock) {
+                const odb_FieldBulkData& block = blocks[iblock];
+                int* nodes = block.nodeLabels();
+                int num_nodes = block.numberOfNodes();
+                int* labels = block.nodeLabels();
+                int length = block.length();
+
+                if (block.width() != 1) {
+                    fmt::print("Unsupported field width for {} {} (block {}, {}).\n",
+                               field_name, instance_name, iblock, block.width());
+                    return;
+                }
+                if (length != num_nodes) {
+                    fmt::print("Inconsistent block length for {} {} (block {}, {}).\n",
+                               field_name, instance_name, iblock, length);
+                    return;
+                }
+
+                switch (block.precision()) {
+                    case odb_Enum::odb_PrecisionEnum::DOUBLE_PRECISION: {
+                        double* data = block.dataDouble();
+                        for (int i = 0; i < num_nodes; ++i) {
+                            data_buffer[labels[i] - 1] += data[i];
+                            node_counts[labels[i] - 1]++;
+                        }
+                        break;
+                    }
+                    case odb_Enum::odb_PrecisionEnum::SINGLE_PRECISION: {
+                        float* data = block.data();
+                        for (int i = 0; i < num_nodes; ++i) {
+                            data_buffer[labels[i] - 1] += data[i];
+                            node_counts[labels[i] - 1]++;
+                        }
+                        break;
+                    }
                 }
             }
         }
+    }
+
+    if (use_cell_data) {
+        data_buffer.resize(num_instance_elements);
         cell_data_[instance_name].push_back(vtkSmartPointer<vtkDoubleArray>::New());
         auto& array = cell_data_[instance_name].back();
         array->SetName(field_name.c_str());
@@ -588,47 +659,8 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field,
         for (const auto& value : data_buffer) {
             array->InsertNextValue(value);
         }
-    } else {
-        data_buffer.resize(num_nodes);
-        std::fill(data_buffer.begin(), data_buffer.end(), 0.0);
-        std::vector<int> node_counts(data_buffer.size(), 0);
-        for (int iblock = 0; iblock < num_blocks; ++iblock) {
-            const odb_FieldBulkData& block = blocks[iblock];
-            int* nodes = block.nodeLabels();
-            int num_nodes = block.numberOfNodes();
-            int* labels = block.nodeLabels();
-            int length = block.length();
-
-            if (block.width() != 1) {
-                fmt::print("Unsupported field width for {} {} (block {}, {}).\n",
-                           field_name, instance_name, iblock, block.width());
-                return;
-            }
-            if (length != num_nodes) {
-                fmt::print("Inconsistent block length for {} {} (block {}, {}).\n",
-                           field_name, instance_name, iblock, length);
-                return;
-            }
-
-            switch (block.precision()) {
-                case odb_Enum::odb_PrecisionEnum::DOUBLE_PRECISION: {
-                    double* data = block.dataDouble();
-                    for (int i = 0; i < num_nodes; ++i) {
-                        data_buffer[labels[i] - 1] += data[i];
-                        node_counts[labels[i] - 1]++;
-                    }
-                    break;
-                }
-                case odb_Enum::odb_PrecisionEnum::SINGLE_PRECISION: {
-                    float* data = block.data();
-                    for (int i = 0; i < num_nodes; ++i) {
-                        data_buffer[labels[i] - 1] += data[i];
-                        node_counts[labels[i] - 1]++;
-                    }
-                    break;
-                }
-            }
-        }
+    } else if (use_point_data) {
+        data_buffer.resize(num_instance_nodes);
         if (requires_extrapolation) {
             for (int i = 0; i < data_buffer.size(); ++i) {
                 data_buffer[i] /= node_counts[i];
@@ -650,7 +682,7 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field,
 //
 // ---------------------------------------------------------------------------------------
 void Converter::extract_vector_field(const odb_FieldOutput& field_output,
-                                     const odb_Instance& instance, bool composite) {}
+                                     odb_Instance& instance, bool composite) {}
 
 // ---------------------------------------------------------------------------------------
 //
@@ -658,6 +690,6 @@ void Converter::extract_vector_field(const odb_FieldOutput& field_output,
 //
 // ---------------------------------------------------------------------------------------
 void Converter::extract_tensor_field(const odb_FieldOutput& field_output,
-                                     const odb_Instance& instance, bool composite) {}
+                                     odb_Instance& instance, bool composite) {}
 
 }  // namespace otk

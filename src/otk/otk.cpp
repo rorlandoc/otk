@@ -102,6 +102,9 @@ int main(int argc, char *argv[]) {
 
         otk::print_footer();
         return 0;
+    } catch (const odb_Exception &odb_err) {
+        otk::print_error(fmt::format("{}", odb_err.AsString().CStr()));
+        return 1;
     } catch (const std::exception &err) {
         otk::print_error(err.what());
         return 1;

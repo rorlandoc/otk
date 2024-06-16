@@ -382,6 +382,9 @@ json Odb::field_summary(const json &frames) const {
         auto step_name = frame_data["step"].get<std::string>();
         auto frame_ids = frame_data["list"].get<std::vector<int>>();
 
+        std::cout << fmt::format("Gathering field info for {}... ", step_name);
+        std::cout << std::flush;
+
         const odb_Step &step = odb_->steps().constGet(step_name.c_str());
         const odb_SequenceFrame &frames = step.frames();
 
@@ -389,10 +392,6 @@ json Odb::field_summary(const json &frames) const {
         step_json["name"] = std::string{step.name().CStr()};
 
         for (auto &frame_id : frame_ids) {
-            std::cout << fmt::format("Gathering field info for {} frame {}... ",
-                                     step_name, frame_id);
-            std::cout << std::flush;
-
             const odb_Frame &frame = frames.constGet(frame_id);
             json frame_json;
 
@@ -410,10 +409,10 @@ json Odb::field_summary(const json &frames) const {
                 frame_json["fields"].push_back(field_json);
             }
             step_json["frames"].push_back(frame_json);
-
-            std::cout << "done.\n" << std::flush;
         }
         summary["steps"].push_back(step_json);
+
+        std::cout << "done.\n" << std::flush;
     }
     return summary;
 }
@@ -429,7 +428,7 @@ json Odb::instance_summary() const {
     odb_Assembly &root_assembly = odb_->rootAssembly();
     odb_InstanceRepositoryIT instance_iterator(root_assembly.instances());
 
-    std::cout << "Summarising instances... " << std::flush;
+    std::cout << "Gathering info about the instances... " << std::flush;
 
     for (instance_iterator.first(); !instance_iterator.isDone();
          instance_iterator.next()) {

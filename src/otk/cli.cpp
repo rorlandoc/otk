@@ -36,6 +36,7 @@ void print_footer() { print_separator_1(2); }
 // ---------------------------------------------------------------------------------------
 void print_error(const std::string& error_message,
                  const argparse::ArgumentParser* options) {
+    fmt::print("\n");
     print_separator_2();
     fmt::print("ERROR: {}\n\n", error_message);
     print_help(options);

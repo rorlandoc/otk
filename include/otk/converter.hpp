@@ -140,7 +140,7 @@ class Converter {
     //
     // -----------------------------------------------------------------------------------
     void extract_instance_field_data(otk::Odb &odb, const nlohmann::json &data,
-                                     const odb_Instance &instance, bool composite,
+                                     odb_Instance &instance, bool composite,
                                      const std::string &step_name, int frame_id);
 
     // -----------------------------------------------------------------------------------
@@ -148,24 +148,24 @@ class Converter {
     //   Extract scalar field data
     //
     // -----------------------------------------------------------------------------------
-    void extract_scalar_field(const odb_FieldOutput &field_output,
-                              const odb_Instance &instance, bool composite);
+    void extract_scalar_field(const odb_FieldOutput &field_output, odb_Instance &instance,
+                              bool composite);
 
     // -----------------------------------------------------------------------------------
     //
     //   Extract vector field data
     //
     // -----------------------------------------------------------------------------------
-    void extract_vector_field(const odb_FieldOutput &field_output,
-                              const odb_Instance &instance, bool composite);
+    void extract_vector_field(const odb_FieldOutput &field_output, odb_Instance &instance,
+                              bool composite);
 
     // -----------------------------------------------------------------------------------
     //
     //   Extract tensor field data
     //
     // -----------------------------------------------------------------------------------
-    void extract_tensor_field(const odb_FieldOutput &field_output,
-                              const odb_Instance &instance, bool composite);
+    void extract_tensor_field(const odb_FieldOutput &field_output, odb_Instance &instance,
+                              bool composite);
 
    private:
     nlohmann::json output_request_;
