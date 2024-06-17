@@ -3,6 +3,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <set>
 #include <unordered_map>
 #include <vector>
 
@@ -27,7 +28,7 @@ namespace otk {
 class Converter {
     using PointArray = vtkSmartPointer<vtkPoints>;
     using CellArray = vtkSmartPointer<vtkCellArray>;
-    using CellArrayMap = std::unordered_map<VTKCellType, CellArray>;
+    using CellArrayPair = std::pair<std::vector<int>, CellArray>;
     using CellData = vtkSmartPointer<vtkDoubleArray>;
     using PointData = vtkSmartPointer<vtkDoubleArray>;
     using CellDataArray = std::vector<CellData>;
@@ -82,7 +83,7 @@ class Converter {
     //   Get the cell types from an element sequence
     //
     // -----------------------------------------------------------------------------------
-    static std::vector<VTKCellType> get_cell_types(
+    static std::set<VTKCellType> get_cell_types(
         const odb_SequenceElement &element_sequence);
 
     // -----------------------------------------------------------------------------------
@@ -90,8 +91,8 @@ class Converter {
     //   Get vtkCellArrays from an element sequence
     //
     // -----------------------------------------------------------------------------------
-    static CellArrayMap get_cells(const std::unordered_map<int, vtkIdType> &node_map,
-                                  const odb_SequenceElement &element_sequence);
+    static CellArrayPair get_cells(const std::unordered_map<int, vtkIdType> &node_map,
+                                   const odb_SequenceElement &element_sequence);
 
     // -----------------------------------------------------------------------------------
     //
@@ -174,7 +175,7 @@ class Converter {
     nlohmann::json output_request_;
     std::vector<odb_FieldOutput> field_outputs_;
     std::unordered_map<std::string, PointArray> points_;
-    std::unordered_map<std::string, CellArrayMap> cells_;
+    std::unordered_map<std::string, CellArrayPair> cells_;
     std::unordered_map<std::string, CellDataArray> cell_data_;
     std::unordered_map<std::string, PointDataArray> point_data_;
 };

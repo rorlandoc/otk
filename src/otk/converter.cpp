@@ -4,6 +4,7 @@
 
 #include <odb_API.h>
 
+#include <vtkInformation.h>
 #include <vtkPartitionedDataSet.h>
 #include <vtkPartitionedDataSetCollection.h>
 #include <vtkXMLPartitionedDataSetCollectionWriter.h>
@@ -11,6 +12,7 @@
 
 #include <iostream>
 #include <regex>
+#include <set>
 #include <thread>
 #include <vector>
 
@@ -49,7 +51,7 @@ void Converter::convert_mesh(otk::Odb& odb) {
         const odb_SequenceNode& instance_nodes = instance.nodes();
         const odb_SequenceElement& instance_elements = instance.elements();
 
-        std::vector<VTKCellType> cell_types = get_cell_types(instance_elements);
+        std::set<VTKCellType> cell_types = get_cell_types(instance_elements);
         if (cell_types.empty()) {
             fmt::print("skipping (no supported elements found)\n");
             continue;
@@ -94,8 +96,8 @@ void Converter::convert_fields(otk::Odb& odb, fs::path file) {
                                      frame_id);
             std::cout << std::flush;
 
-            json field_data = load_field_data(odb, matches, step, frame_id);
-            extract_field_data(odb, field_data, instance_summary, step, frame_id);
+            // json field_data = load_field_data(odb, matches, step, frame_id);
+            // extract_field_data(odb, field_data, instance_summary, step, frame_id);
             write(file, frame_id);
         }
     }
@@ -114,6 +116,7 @@ void Converter::write(fs::path file, int frame_id) {
     auto collection = vtkSmartPointer<vtkPartitionedDataSetCollection>::New();
 
     std::vector<std::string> instance_names = extract_keys(points_);
+    std::sort(instance_names.begin(), instance_names.end());
 
     int instance_id = 0;
 
@@ -123,9 +126,8 @@ void Converter::write(fs::path file, int frame_id) {
     for (auto& instance_name : instance_names) {
         auto grid = vtkSmartPointer<vtkUnstructuredGrid>::New();
         grid->SetPoints(points_[instance_name]);
-        for (auto& [cell_type, cell_array] : cells_[instance_name]) {
-            grid->SetCells(cell_type, cell_array);
-        }
+        grid->SetCells(cells_[instance_name].first.data(), cells_[instance_name].second);
+
         for (auto& cell_array : cell_data_[instance_name]) {
             grid->GetCellData()->AddArray(cell_array);
         }
@@ -134,6 +136,8 @@ void Converter::write(fs::path file, int frame_id) {
         }
 
         collection->SetPartition(instance_id, 0, grid);
+        collection->GetMetaData(instance_id)
+            ->Set(vtkCompositeDataSet::NAME(), instance_name);
         instance_id++;
     }
 
@@ -167,24 +171,19 @@ std::string Converter::get_base_element_type(const std::string& element_type) {
 //   Get the cell types from an element sequence
 //
 // ---------------------------------------------------------------------------------------
-std::vector<VTKCellType> Converter::get_cell_types(
+std::set<VTKCellType> Converter::get_cell_types(
     const odb_SequenceElement& element_sequence) {
-    std::vector<VTKCellType> cell_types;
+    std::set<VTKCellType> cell_types;
     int num_elements = element_sequence.size();
     for (int i = 0; i < num_elements; ++i) {
         const odb_Element& element = element_sequence[i];
         std::string element_type = get_base_element_type(element.type().CStr());
 
-        if (auto it = ABQ_VTK_CELL_MAP.find(element_type); it != ABQ_VTK_CELL_MAP.end()) {
-            auto v_it = std::find_if(
-                cell_types.begin(), cell_types.end(),
-                [&](VTKCellType cell_type) { return cell_type == it->second; });
-            if (v_it == cell_types.end()) {
-                cell_types.push_back(it->second);
-            }
-        } else {
-            fmt::print("Element type {} is not supported.", element_type);
+        if (element_type == "Unsupported") {
+            continue;
         }
+
+        cell_types.insert(ABQ_VTK_CELL_MAP.at(element_type));
     }
     return cell_types;
 }
@@ -194,21 +193,25 @@ std::vector<VTKCellType> Converter::get_cell_types(
 //   Get vtkCellArrays from an element sequence
 //
 // ---------------------------------------------------------------------------------------
-Converter::CellArrayMap Converter::get_cells(
+Converter::CellArrayPair Converter::get_cells(
     const std::unordered_map<int, vtkIdType>& node_map,
     const odb_SequenceElement& element_sequence) {
-    CellArrayMap cells;
+    CellArrayPair cells;
 
     int num_elements = element_sequence.size();
     int num_nodes = 0;
+
+    cells.second = vtkSmartPointer<vtkCellArray>::New();
+    cells.first.reserve(num_elements);
+
     for (int i = 0; i < num_elements; ++i) {
         const odb_Element& element = element_sequence[i];
         int element_label = element.label();
         std::string element_type = get_base_element_type(element.type().CStr());
-        VTKCellType cell_type;
+        int cell_type;
 
         if (element_type != "Unsupported") {
-            cell_type = ABQ_VTK_CELL_MAP.at(element_type);
+            cell_type = static_cast<int>(ABQ_VTK_CELL_MAP.at(element_type));
 
             const int* const element_connectivity = element.connectivity(num_nodes);
 
@@ -217,10 +220,8 @@ Converter::CellArrayMap Converter::get_cells(
                 connectivity[j] = node_map.at(element_connectivity[j]);
             }
 
-            if (cells.find(cell_type) == cells.end()) {
-                cells[cell_type] = vtkSmartPointer<vtkCellArray>::New();
-            }
-            cells[cell_type]->InsertNextCell(num_nodes, connectivity.data());
+            cells.first.push_back(cell_type);
+            cells.second->InsertNextCell(num_nodes, connectivity.data());
         } else {
             fmt::print("WARNING: Element type {} is not supported.\n", element_type);
             fmt::print("This element will be ignored.\n");
