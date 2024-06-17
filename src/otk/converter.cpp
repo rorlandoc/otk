@@ -59,7 +59,8 @@ void Converter::convert_mesh(otk::Odb& odb) {
 
         std::unordered_map<int, vtkIdType> node_map;
         points_[instance_name] = get_points(node_map, instance_nodes, instance_type);
-        cells_[instance_name] = get_cells(node_map, instance_elements);
+        cells_[instance_name] =
+            get_cells(node_map, instance_elements, instance_name, instance);
 
         std::cout << fmt::format("done\n");
         std::cout << std::flush;
@@ -96,8 +97,8 @@ void Converter::convert_fields(otk::Odb& odb, fs::path file) {
                                      frame_id);
             std::cout << std::flush;
 
-            // json field_data = load_field_data(odb, matches, step, frame_id);
-            // extract_field_data(odb, field_data, instance_summary, step, frame_id);
+            json field_data = load_field_data(odb, matches, step, frame_id);
+            extract_field_data(odb, field_data, instance_summary, step, frame_id);
             write(file, frame_id);
         }
     }
@@ -195,7 +196,8 @@ std::set<VTKCellType> Converter::get_cell_types(
 // ---------------------------------------------------------------------------------------
 Converter::CellArrayPair Converter::get_cells(
     const std::unordered_map<int, vtkIdType>& node_map,
-    const odb_SequenceElement& element_sequence) {
+    const odb_SequenceElement& element_sequence, const std::string& instance_name,
+    const odb_Instance& instance) {
     CellArrayPair cells;
 
     int num_elements = element_sequence.size();
@@ -207,7 +209,10 @@ Converter::CellArrayPair Converter::get_cells(
     for (int i = 0; i < num_elements; ++i) {
         const odb_Element& element = element_sequence[i];
         int element_label = element.label();
-        std::string element_type = get_base_element_type(element.type().CStr());
+        std::string raw_type{element.type().CStr()};
+        std::string element_type = get_base_element_type(raw_type);
+        std::string section_category{element.sectionCategory().name().CStr()};
+        std::string key = fmt::format("{} {}", section_category, raw_type);
         int cell_type;
 
         if (element_type != "Unsupported") {
@@ -222,6 +227,15 @@ Converter::CellArrayPair Converter::get_cells(
 
             cells.first.push_back(cell_type);
             cells.second->InsertNextCell(num_nodes, connectivity.data());
+
+            if (!section_elements_[instance_name].contains(key)) {
+                odb_SequenceElement temp(instance);
+                temp.append(element);
+                section_elements_[instance_name][key] = temp;
+            } else {
+                section_elements_[instance_name][key].append(element);
+            }
+
         } else {
             fmt::print("WARNING: Element type {} is not supported.\n", element_type);
             fmt::print("This element will be ignored.\n");
@@ -437,24 +451,8 @@ void Converter::extract_instance_field_data(otk::Odb& odb, const json& data,
                              instance.name().cStr());
     std::cout << std::flush;
 
-    std::unordered_map<std::string, odb_SequenceElement> section_elements;
-    const odb_SequenceElement elements = instance.elements();
-    int num_elements = elements.size();
-    for (int ielement = 0; ielement < num_elements; ++ielement) {
-        const odb_Element element = elements[ielement];
-        std::string name{element.sectionCategory().name().CStr()};
-        std::string type{element.type().CStr()};
-        std::string key = fmt::format("{} {}", name, type);
-        if (section_elements.contains(key) == false) {
-            odb_SequenceElement temp(instance);
-            temp.append(element);
-            section_elements[key] = temp;
-        } else {
-            section_elements[key].append(element);
-        }
-    }
     std::vector<odb_Set> element_sets;
-    for (const auto& [key, elements] : section_elements) {
+    for (const auto& [key, elements] : section_elements_[instance.name().cStr()]) {
         const odb_String set_name{key.c_str()};
         odb_Set set;
         if (instance.elementSets().isMember(set_name) == false) {

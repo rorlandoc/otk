@@ -33,6 +33,7 @@ class Converter {
     using PointData = vtkSmartPointer<vtkDoubleArray>;
     using CellDataArray = std::vector<CellData>;
     using PointDataArray = std::vector<PointData>;
+    using ElementMap = std::unordered_map<std::string, odb_SequenceElement>;
 
    public:
     // -----------------------------------------------------------------------------------
@@ -76,32 +77,33 @@ class Converter {
     //   Get the base element type without derivatives
     //
     // -----------------------------------------------------------------------------------
-    static std::string get_base_element_type(const std::string &element_type);
+    std::string get_base_element_type(const std::string &element_type);
 
     // -----------------------------------------------------------------------------------
     //
     //   Get the cell types from an element sequence
     //
     // -----------------------------------------------------------------------------------
-    static std::set<VTKCellType> get_cell_types(
-        const odb_SequenceElement &element_sequence);
+    std::set<VTKCellType> get_cell_types(const odb_SequenceElement &element_sequence);
 
     // -----------------------------------------------------------------------------------
     //
     //   Get vtkCellArrays from an element sequence
     //
     // -----------------------------------------------------------------------------------
-    static CellArrayPair get_cells(const std::unordered_map<int, vtkIdType> &node_map,
-                                   const odb_SequenceElement &element_sequence);
+    CellArrayPair get_cells(const std::unordered_map<int, vtkIdType> &node_map,
+                            const odb_SequenceElement &element_sequence,
+                            const std::string &instance_name,
+                            const odb_Instance &instance);
 
     // -----------------------------------------------------------------------------------
     //
     //   Get vtkPoints from a node sequence
     //
     // -----------------------------------------------------------------------------------
-    static PointArray get_points(std::unordered_map<int, vtkIdType> &node_map,
-                                 const odb_SequenceNode &node_sequence,
-                                 odb_Enum::odb_DimensionEnum instance_type);
+    PointArray get_points(std::unordered_map<int, vtkIdType> &node_map,
+                          const odb_SequenceNode &node_sequence,
+                          odb_Enum::odb_DimensionEnum instance_type);
 
     // -----------------------------------------------------------------------------------
     //
@@ -178,6 +180,7 @@ class Converter {
     std::unordered_map<std::string, CellArrayPair> cells_;
     std::unordered_map<std::string, CellDataArray> cell_data_;
     std::unordered_map<std::string, PointDataArray> point_data_;
+    std::unordered_map<std::string, ElementMap> section_elements_;
 };
 
 // ---------------------------------------------------------------------------------------
