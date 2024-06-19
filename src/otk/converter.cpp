@@ -354,8 +354,8 @@ json Converter::match_request_to_available_data(const json& frames, const json& 
             field_matches_frame["frame"] = frame;
             for (const auto& request : fields_requested) {
                 std::regex regex(request);
-                const auto& field_names =
-                    fields[step_name][frame].template get<std::vector<std::string>>();
+                const auto& field_names = fields[step_name][std::to_string(frame)]
+                                              .template get<std::vector<std::string>>();
                 for (const auto& field_name : field_names) {
                     if (std::regex_match(field_name, regex)) {
                         field_matches_frame["fields"].push_back(field_name);
