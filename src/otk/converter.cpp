@@ -362,6 +362,8 @@ json Converter::match_request_to_available_data(const json& frames, const json& 
     std::cout << fmt::format("done\n");
     std::cout << std::flush;
 
+    std::cout << "\n" << matches.dump(2) << "\n\n" << std::flush;
+
     return matches;
 }
 
