@@ -26,6 +26,13 @@ namespace otk {
 //
 // ---------------------------------------------------------------------------------------
 void Converter::convert(otk::Odb& odb, fs::path file) {
+    json field_summary = odb.field_summary(output_request_["frames"]);
+    json instance_summary = odb.instance_summary();
+
+    json output_summary = process_field_summary(field_summary);
+    json matches = match_request_to_available_data(output_summary["available_frames"],
+                                                   output_summary["available_fields"]);
+
     convert_mesh(odb);
     convert_fields(odb, file);
 }
