@@ -297,11 +297,12 @@ json Converter::process_field_summary(const json& summary) {
     for (const auto& step : summary["steps"]) {
         auto step_name = step["name"].template get<std::string>();
         for (const auto& frame : step["frames"]) {
-            auto frame_number = frame["id"].template get<int>();
+            auto frame_number = frame["index"].template get<int>();
             frame_numbers[step_name].push_back(frame_number);
             for (const auto& field : frame["fields"]) {
                 auto field_name = field["name"].template get<std::string>();
-                field_names[step_name][frame_number].push_back(field_name);
+                field_names[step_name][std::to_string(frame_number)].push_back(
+                    field_name);
             }
         }
     }

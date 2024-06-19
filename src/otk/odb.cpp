@@ -393,6 +393,7 @@ json Odb::field_summary(const json &frames) const {
             const odb_Frame &frame = frames.constGet(frame_id);
             json frame_json;
 
+            frame_json["index"] = frame_id;
             frame_json["id"] = frame.frameId();
             frame_json["increment"] = frame.incrementNumber();
             frame_json["value"] = frame.frameValue();
