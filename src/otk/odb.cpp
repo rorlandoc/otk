@@ -278,7 +278,7 @@ void Odb::frames_info(const std::string &step, bool verbose) const {
     fmt::print(".... Starting value: {}\n", frames[0].frameValue());
     fmt::print(".... Ending value: {}\n", frames[number_frames - 1].frameValue());
 
-    fmt::print("     | {:^11d} | {:^11} | {:^11} | {:^11} |\n", "Index", "Frame ID",
+    fmt::print("     | {:^11} | {:^11} | {:^11} | {:^11} |\n", "Index", "Frame ID",
                "Increment", "Value");
 
     for (int i = 0; i < number_frames; ++i) {
