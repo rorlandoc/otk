@@ -33,13 +33,15 @@ void Converter::convert(otk::Odb& odb, fs::path file) {
     json matches = match_request_to_available_data(output_summary["available_frames"],
                                                    output_summary["available_fields"]);
 
-    if (matches["fields"].is_null()) {
-        fmt::print("ERROR - No matching fields found.\n");
-        return;
-    }
-    if (matches["frames"].empty()) {
-        fmt::print("ERROR - No matching frames found.\n");
-        return;
+    for (const auto& [step, step_data] : matches.items()) {
+        if (step_data["fields"].is_null()) {
+            fmt::print("ERROR - No matching fields found in {}.\n", step);
+            return;
+        }
+        if (step_data["frames"].empty()) {
+            fmt::print("ERROR - No matching frames found in {}.\n", step);
+            return;
+        }
     }
 
     convert_mesh(odb);
