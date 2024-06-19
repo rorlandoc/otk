@@ -63,7 +63,8 @@ class Converter {
     //   Convert field data to VTK format
     //
     // -----------------------------------------------------------------------------------
-    void convert_fields(otk::Odb &odb, fs::path file);
+    void convert_fields(otk::Odb &odb, fs::path file, json field_summary,
+                        json instance_summary, json output_summary, json matches);
 
     // -----------------------------------------------------------------------------------
     //

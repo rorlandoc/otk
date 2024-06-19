@@ -33,8 +33,17 @@ void Converter::convert(otk::Odb& odb, fs::path file) {
     json matches = match_request_to_available_data(output_summary["available_frames"],
                                                    output_summary["available_fields"]);
 
+    if (matches["fields"].is_null()) {
+        fmt::print("ERROR - No matching fields found.\n");
+        return;
+    }
+    if (matches["frames"].empty()) {
+        fmt::print("ERROR - No matching frames found.\n");
+        return;
+    }
+
     convert_mesh(odb);
-    convert_fields(odb, file);
+    convert_fields(odb, file, field_summary, instance_summary, output_summary, matches);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -79,18 +88,10 @@ void Converter::convert_mesh(otk::Odb& odb) {
 //   Convert field data to VTK format
 //
 // ---------------------------------------------------------------------------------------
-void Converter::convert_fields(otk::Odb& odb, fs::path file) {
+void Converter::convert_fields(otk::Odb& odb, fs::path file, json field_summary,
+                               json instance_summary, json output_summary, json matches) {
     std::cout << fmt::format("Started field data conversion.\n");
     std::cout << std::flush;
-
-    using namespace nlohmann;
-
-    json field_summary = odb.field_summary(output_request_["frames"]);
-    json instance_summary = odb.instance_summary();
-
-    json output_summary = process_field_summary(field_summary);
-    json matches = match_request_to_available_data(output_summary["available_frames"],
-                                                   output_summary["available_fields"]);
 
     for (auto& [step, step_data] : matches.items()) {
         for (auto& frame_data : step_data["frames"]) {
@@ -369,7 +370,9 @@ json Converter::match_request_to_available_data(const json& frames, const json& 
     std::cout << fmt::format("done\n");
     std::cout << std::flush;
 
-    std::cout << "\n" << matches.dump(2) << "\n\n" << std::flush;
+    std::cout << "\nframes:\n" << frames.dump(2) << "\n\n" << std::flush;
+    std::cout << "\nfields:\n" << fields.dump(2) << "\n\n" << std::flush;
+    std::cout << "\nmatches\n" << matches.dump(2) << "\n\n" << std::flush;
 
     return matches;
 }
