@@ -278,12 +278,13 @@ void Odb::frames_info(const std::string &step, bool verbose) const {
     fmt::print(".... Starting value: {}\n", frames[0].frameValue());
     fmt::print(".... Ending value: {}\n", frames[number_frames - 1].frameValue());
 
-    fmt::print("     | {:^11} | {:^11} | {:^11} |\n", "Frame ID", "Increment", "Value");
+    fmt::print("     | {:^11d} | {:^11} | {:^11} | {:^11} |\n", "Index", "Frame ID",
+               "Increment", "Value");
 
     for (int i = 0; i < number_frames; ++i) {
         const odb_Frame &frame = frames[i];
-        fmt::print("     | {:^11d} | {:^11d} | {: 10.4e} |\n", frame.frameId(),
-                   frame.incrementNumber(), frame.frameValue());
+        fmt::print("     | {:^11d} | {:^11d} | {:^11d} | {: 10.4e} |\n", i,
+                   frame.frameId(), frame.incrementNumber(), frame.frameValue());
     }
 
     this->fields_info(step, 0, verbose);
