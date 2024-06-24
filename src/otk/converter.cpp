@@ -143,7 +143,11 @@ void Converter::write(fs::path file, int frame_id) {
             grid->GetCellData()->AddArray(cell_array);
         }
         for (auto& point_array : point_data_[instance_name]) {
-            grid->GetPointData()->AddArray(point_array);
+            if (point_array->GetNumberOfComponents() == 3) {
+                grid->GetPointData()->SetVectors(point_array);
+            } else {
+                grid->GetPointData()->AddArray(point_array);
+            }
         }
 
         collection->SetPartition(instance_id, 0, grid);
@@ -373,9 +377,9 @@ json Converter::match_request_to_available_data(const json& frames, const json& 
     std::cout << fmt::format("done\n");
     std::cout << std::flush;
 
-    std::cout << "\nframes:\n" << frames.dump(2) << "\n\n" << std::flush;
-    std::cout << "\nfields:\n" << fields.dump(2) << "\n\n" << std::flush;
-    std::cout << "\nmatches\n" << matches.dump(2) << "\n\n" << std::flush;
+    // std::cout << "\nframes:\n" << frames.dump(2) << "\n\n" << std::flush;
+    // std::cout << "\nfields:\n" << fields.dump(2) << "\n\n" << std::flush;
+    // std::cout << "\nmatches\n" << matches.dump(2) << "\n\n" << std::flush;
 
     return matches;
 }
@@ -699,7 +703,62 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field,
 // ---------------------------------------------------------------------------------------
 void Converter::extract_vector_field(const odb_FieldOutput& field_output,
                                      const std::vector<odb_Set>& element_sets,
-                                     const odb_Instance& instance, bool composite) {}
+                                     const odb_Instance& instance, bool composite) {
+    std::string field_name{field_output.name().cStr()};
+    std::string instance_name{instance.name().cStr()};
+
+    int num_instance_elements = instance.elements().size();
+    int num_instance_nodes = instance.nodes().size();
+    int num_section_assignments = instance.sectionAssignments().size();
+
+    std::vector<std::vector<double>> data_buffer(num_instance_nodes, {0.0, 0.0, 0.0});
+    const odb_SequenceFieldBulkData& blocks = field_output.bulkDataBlocks();
+    int num_blocks = blocks.size();
+
+    for (int iblock = 0; iblock < num_blocks; ++iblock) {
+        const odb_FieldBulkData& block = blocks[iblock];
+        int num_nodes = block.numberOfNodes();
+        int num_components = block.width();
+        int* labels = block.nodeLabels();
+
+        if (num_components != 3 && num_components != 2) {
+            fmt::print("Unsupported field width for {} {} (block {}, {}).\n", field_name,
+                       instance_name, iblock, block.width());
+            return;
+        }
+
+        switch (block.precision()) {
+            case odb_Enum::odb_PrecisionEnum::DOUBLE_PRECISION: {
+                double* data = block.dataDouble();
+                int pos = 0;
+                for (int i = 0; i < num_nodes; ++i) {
+                    for (int j = 0; j < num_components; ++j) {
+                        data_buffer[labels[i] - 1][j] = data[pos++];
+                    }
+                }
+                break;
+            }
+            case odb_Enum::odb_PrecisionEnum::SINGLE_PRECISION: {
+                float* data = block.data();
+                int pos = 0;
+                for (int i = 0; i < num_nodes; ++i) {
+                    for (int j = 0; j < num_components; ++j) {
+                        data_buffer[labels[i] - 1][j] = data[pos++];
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    point_data_[instance_name].push_back(vtkSmartPointer<vtkDoubleArray>::New());
+    auto& array = point_data_[instance_name].back();
+    array->SetName(field_name.c_str());
+    array->SetNumberOfComponents(3);
+    for (const auto& value : data_buffer) {
+        array->InsertNextTuple3(value[0], value[1], value[2]);
+    }
+}
 
 // ---------------------------------------------------------------------------------------
 //
