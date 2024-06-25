@@ -373,18 +373,26 @@ void Odb::fields_info(const std::string &step, int frame, bool verbose) const {
 //   JSON summary
 //
 // ---------------------------------------------------------------------------------------
-json Odb::field_summary(const json &frames) const {
+json Odb::field_summary(json &frames) const {
     json summary;
 
     for (auto &frame_data : frames) {
         auto step_name = frame_data["step"].get<std::string>();
-        auto frame_ids = frame_data["list"].get<std::vector<int>>();
 
         std::cout << fmt::format("Gathering field info for {}... ", step_name);
         std::cout << std::flush;
 
         const odb_Step &step = odb_->steps().constGet(step_name.c_str());
         const odb_SequenceFrame &frames = step.frames();
+
+        std::vector<int> frame_ids;
+        if (frame_data.contains("list")) {
+            frame_ids = frame_data["list"].get<std::vector<int>>();
+        } else {
+            frame_ids.resize(frames.size(), 0);
+            std::iota(frame_ids.begin(), frame_ids.end(), 0);
+            frame_data["list"] = frame_ids;
+        }
 
         json step_json;
         step_json["name"] = std::string{step.name().CStr()};

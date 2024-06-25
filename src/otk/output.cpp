@@ -19,23 +19,6 @@ namespace otk {
 //
 // ---------------------------------------------------------------------------------------
 bool is_output_request_valid(const json &output_request) {
-    if (!output_request.contains("instances")) {
-        return false;
-    }
-    if (!(output_request["instances"].is_array()) &&
-        !(output_request["instances"].is_string())) {
-        return false;
-    }
-    if (output_request["instances"].is_array()) {
-        if (output_request["instances"].size() <= 0ull) {
-            return false;
-        }
-        for (auto instance : output_request["instances"]) {
-            if (!instance.is_string()) {
-                return false;
-            }
-        }
-    }
     if (!output_request.contains("frames")) {
         return false;
     }
@@ -51,20 +34,6 @@ bool is_output_request_valid(const json &output_request) {
         }
         if (!frame["step"].is_string()) {
             return false;
-        }
-        if (!frame.contains("list")) {
-            return false;
-        }
-        if (!frame["list"].is_array()) {
-            return false;
-        }
-        if (frame["list"].size() <= 0ull) {
-            return false;
-        }
-        for (auto item : frame["list"]) {
-            if (!item.is_number_integer()) {
-                return false;
-            }
         }
     }
     if (!output_request.contains("fields")) {
