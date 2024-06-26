@@ -34,6 +34,7 @@ class Converter {
     using CellDataArray = std::vector<CellData>;
     using PointDataArray = std::vector<PointData>;
     using ElementMap = std::unordered_map<std::string, odb_SequenceElement>;
+    using ElementLabelMap = std::unordered_map<int, int>;
 
    public:
     // -----------------------------------------------------------------------------------
@@ -183,6 +184,7 @@ class Converter {
     std::unordered_map<std::string, CellDataArray> cell_data_;
     std::unordered_map<std::string, PointDataArray> point_data_;
     std::unordered_map<std::string, ElementMap> section_elements_;
+    std::unordered_map<std::string, ElementLabelMap> element_map_;
 };
 
 // ---------------------------------------------------------------------------------------

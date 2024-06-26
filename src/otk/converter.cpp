@@ -217,6 +217,8 @@ Converter::CellArrayPair Converter::get_cells(
     int num_elements = element_sequence.size();
     int num_nodes = 0;
 
+    ElementLabelMap element_labels;
+
     cells.second = vtkSmartPointer<vtkCellArray>::New();
     cells.first.reserve(num_elements);
 
@@ -249,6 +251,7 @@ Converter::CellArrayPair Converter::get_cells(
             } else {
                 section_elements_[instance_name][key].append(element);
             }
+            element_labels[element_label] = i;
 
         } else {
             fmt::print("WARNING: Element type {} is not supported.\n", element_type);
@@ -256,6 +259,8 @@ Converter::CellArrayPair Converter::get_cells(
             fmt::print("This may lead to incorrect results.\n");
         }
     }
+
+    element_map_[instance_name] = element_labels;
 
     return cells;
 }
@@ -535,6 +540,8 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field,
     std::string field_name{field.name().cStr()};
     std::string instance_name{instance.name().cStr()};
 
+    ElementLabelMap element_labels = element_map_[instance_name];
+
     int num_instance_elements = instance.elements().size();
     int num_instance_nodes = instance.nodes().size();
     int num_section_assignments = instance.sectionAssignments().size();
@@ -621,14 +628,16 @@ void Converter::extract_scalar_field(const odb_FieldOutput& field,
                     case odb_Enum::odb_PrecisionEnum::DOUBLE_PRECISION: {
                         double* data = block.dataDouble();
                         for (int i = 0; i < num_elements; ++i) {
-                            data_buffer[labels[i] - 1] = data[i];
+                            int id = element_labels[labels[i]];
+                            data_buffer[id] = data[i];
                         }
                         break;
                     }
                     case odb_Enum::odb_PrecisionEnum::SINGLE_PRECISION: {
                         float* data = block.data();
                         for (int i = 0; i < num_elements; ++i) {
-                            data_buffer[labels[i] - 1] = data[i];
+                            int id = element_labels[labels[i]];
+                            data_buffer[id] = data[i];
                         }
                         break;
                     }
