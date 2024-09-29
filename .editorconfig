@@ -1,0 +1,3 @@
+[*.{c,cc,cxx,cpp,h,hxx,hpp}]
+indent_style = space
+indent_size = 4
